@@ -9,52 +9,82 @@ import plotly.graph_objects as go
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Residência", page_icon="🩺", layout="wide")
 
-# --- CSS Personalizado (Avatars e Dashboard) ---
+# --- CSS PRO (Visual Refinado) ---
 st.markdown("""
     <style>
+    /* Remove padding excessivo do topo */
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
-    /* Estilo dos Cards de Disciplina */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
+    /* ESTILO DOS CARDS (DASHBOARD) */
+    .dashboard-card {
         background-color: white;
-        border-radius: 12px;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        transition: transform 0.2s;
-    }
-    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 12px rgba(0,0,0,0.1);
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        border: 1px solid #f0f0f0;
+        margin-bottom: 20px;
     }
     
-    /* Estilo para imagens circulares (Avatars) */
-    .avatar-img {
-        border-radius: 50%;
-        width: 120px;
-        height: 120px;
-        object-fit: cover;
-        margin-bottom: 10px;
-        border: 3px solid #f0f2f6;
+    /* Títulos dentro dos cards */
+    .card-title {
+        color: #555;
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 15px;
+    }
+    
+    /* AVATARS */
+    .avatar-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 10px;
         transition: transform 0.2s;
     }
-    .avatar-container:hover .avatar-img {
-        transform: scale(1.05);
-        border-color: #ff4b4b;
+    .avatar-container:hover {
+        transform: translateY(-5px);
     }
-
+    .avatar-img {
+        border-radius: 50%;
+        width: 100px;
+        height: 100px;
+        object-fit: cover;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        margin-bottom: 10px;
+    }
+    .avatar-name {
+        font-weight: bold;
+        font-size: 16px;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    
     /* Botões personalizados */
     div.stButton > button {
         width: 100%; 
         border-radius: 8px; 
-        font-weight: bold;
+        font-weight: 600;
+        border: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: all 0.2s;
+    }
+    div.stButton > button:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    /* Ajuste para gráficos transparentes */
+    .js-plotly-plot .plotly .modebar {
+        display: none !important; /* Esconde barra de ferramentas do gráfico */
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Configurações e Dados ---
+# --- Dados e Configurações ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 
-# Mapeamento de Cores e Imagens
 USUARIOS_CONFIG = {
     "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
     "Arthur":    {"color": "#263149", "img": "arthur.png"},
@@ -88,8 +118,7 @@ def carregar_dados():
             if tentativa == 2: return pd.DataFrame(), None
 
 def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
-    try:
-        worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
+    try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
     except:
         time.sleep(1)
         try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
@@ -100,88 +129,89 @@ def limpar_booleano(valor):
     if isinstance(valor, str): return valor.upper() == 'TRUE'
     return False
 
-# --- Inicialização de Estado (Navegação) ---
-if 'pagina_atual' not in st.session_state:
-    st.session_state['pagina_atual'] = 'dashboard' # dashboard, user_home, focus
-if 'usuario_ativo' not in st.session_state:
-    st.session_state['usuario_ativo'] = None
-if 'disciplina_ativa' not in st.session_state:
-    st.session_state['disciplina_ativa'] = None
+# --- Navegação e Estado ---
+if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = 'dashboard'
+if 'usuario_ativo' not in st.session_state: st.session_state['usuario_ativo'] = None
+if 'disciplina_ativa' not in st.session_state: st.session_state['disciplina_ativa'] = None
 
-# --- Funções de Navegação ---
 def ir_para_dashboard():
-    st.session_state['pagina_atual'] = 'dashboard'
-    st.session_state['usuario_ativo'] = None
-    st.session_state['disciplina_ativa'] = None
+    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
     st.rerun()
 
 def ir_para_usuario(nome):
-    st.session_state['pagina_atual'] = 'user_home'
-    st.session_state['usuario_ativo'] = nome
+    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome})
     st.rerun()
 
 def ir_para_disciplina(disciplina):
-    st.session_state['pagina_atual'] = 'focus'
-    st.session_state['disciplina_ativa'] = disciplina
+    st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': disciplina})
     st.rerun()
 
 def voltar_para_usuario():
-    st.session_state['pagina_atual'] = 'user_home'
-    st.session_state['disciplina_ativa'] = None
+    st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None})
     st.rerun()
 
-# --- Funções de Gráficos do Dashboard ---
-def renderizar_grafico_ranking(df):
+# --- Visualização de Gráficos Otimizada ---
+def renderizar_ranking_clean(df, colunas_validas):
     ranking_data = []
     total_linhas = len(df)
     
-    for user in LISTA_USUARIOS:
-        if user in df.columns:
-            pct = df[user].apply(limpar_booleano).sum() / total_linhas * 100
-            ranking_data.append({"Nome": user, "Progresso (%)": pct, "Cor": USUARIOS_CONFIG[user]["color"]})
+    for user in colunas_validas:
+        pct = df[user].apply(limpar_booleano).sum() / total_linhas * 100
+        ranking_data.append({"Nome": user, "Progresso": pct, "Cor": USUARIOS_CONFIG[user]["color"]})
     
-    df_rank = pd.DataFrame(ranking_data).sort_values("Progresso (%)", ascending=True)
+    df_rank = pd.DataFrame(ranking_data).sort_values("Progresso", ascending=True)
     
-    fig = px.bar(
-        df_rank, 
-        x="Progresso (%)", 
-        y="Nome", 
-        orientation='h', 
-        text_auto='.1f',
-        color="Nome",
-        color_discrete_map={row["Nome"]: row["Cor"] for _, row in df_rank.iterrows()}
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=df_rank["Progresso"],
+        y=df_rank["Nome"],
+        orientation='h',
+        marker=dict(color=df_rank["Cor"], opacity=0.9, showscale=False),
+        text=df_rank["Progresso"].apply(lambda x: f"{x:.1f}%"),
+        textposition='outside',
+        textfont=dict(size=14, color='#333'),
+        hovertemplate='%{y}: %{x:.1f}%<extra></extra>'
+    ))
+    
+    fig.update_layout(
+        margin=dict(l=0, r=30, t=0, b=0),
+        height=300,
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(showgrid=False, tickfont=dict(size=14, family="Arial Black")),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
     )
-    fig.update_layout(showlegend=False, margin=dict(l=0, r=0, t=30, b=0), height=300)
-    fig.update_traces(textfont_size=14, textangle=0, textposition="outside", cliponaxis=False)
     return fig
 
-def get_disciplina_mais_estudada(df, user):
-    if user not in df.columns: return "N/A", 0
-    df_temp = df.copy()
-    df_temp['Check'] = df_temp[user].apply(limpar_booleano)
-    agrupado = df_temp.groupby('Disciplina')['Check'].sum().reset_index()
-    top = agrupado.sort_values('Check', ascending=False).iloc[0]
-    return top['Disciplina'], top['Check']
-
-def renderizar_heatmap_disciplinas(df):
-    # Soma de checks de TODOS os usuários por disciplina
+def renderizar_top_disciplinas(df, colunas_validas):
     df_temp = df.copy()
     df_temp['Total_Views'] = 0
-    for user in LISTA_USUARIOS:
-        if user in df_temp.columns:
-            df_temp['Total_Views'] += df_temp[user].apply(limpar_booleano).astype(int)
+    for user in colunas_validas:
+        df_temp['Total_Views'] += df_temp[user].apply(limpar_booleano).astype(int)
             
-    agrupado = df_temp.groupby('Disciplina')['Total_Views'].sum().reset_index().sort_values('Total_Views', ascending=False).head(10)
+    agrupado = df_temp.groupby('Disciplina')['Total_Views'].sum().reset_index()
+    agrupado = agrupado.sort_values('Total_Views', ascending=True).tail(8) # Top 8
     
-    fig = px.bar(
-        agrupado, 
-        x='Disciplina', 
-        y='Total_Views',
-        color='Total_Views',
-        color_continuous_scale='Bluered',
-        title="Top 10 Disciplinas Mais Estudadas (Grupo)"
+    fig = go.Figure(go.Bar(
+        x=agrupado['Total_Views'],
+        y=agrupado['Disciplina'],
+        orientation='h',
+        marker=dict(
+            color=agrupado['Total_Views'],
+            colorscale='Blues', # Gradiente azul elegante
+        ),
+        text=agrupado['Total_Views'],
+        textposition='auto',
+    ))
+    
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=300,
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(showgrid=False, tickfont=dict(size=12)),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
     )
-    fig.update_layout(height=350)
     return fig
 
 # --- APP PRINCIPAL ---
@@ -192,85 +222,129 @@ if df.empty or worksheet is None:
     st.error("Erro ao conectar. Tente recarregar.")
     st.stop()
 
-# Verificar colunas
 colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 
-# --- 1. DASHBOARD GERAL ---
+# ==========================================================
+# 1. DASHBOARD GERAL (Visual Novo)
+# ==========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
-    st.title("📊 MedTracker Dashboard")
-    st.markdown("Bem-vindo ao painel de controle da residência.")
-    st.markdown("---")
+    
+    # 1.1 Header e KPIs Globais
+    total_aulas = len(df) * len(colunas_validas)
+    aulas_assistidas_total = 0
+    for u in colunas_validas:
+        aulas_assistidas_total += df[u].apply(limpar_booleano).sum()
+    
+    st.markdown("<h1 style='text-align: center; color: #2c3e50;'>🩺 MedTracker Residência</h1>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align: center; color: gray; margin-top: -10px;'>Painel de Controle Unificado - {time.strftime('%Y')}</p>", unsafe_allow_html=True)
+    
+    # KPIs em Cards HTML/CSS
+    kpi1, kpi2, kpi3 = st.columns(3)
+    with kpi1:
+        st.markdown(f"""
+        <div class="dashboard-card" style="text-align:center;">
+            <div class="card-title">Aulas Assistidas (Grupo)</div>
+            <div style="font-size: 32px; font-weight: bold; color: #3498db;">{aulas_assistidas_total}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi2:
+        media = aulas_assistidas_total / len(colunas_validas) if colunas_validas else 0
+        st.markdown(f"""
+        <div class="dashboard-card" style="text-align:center;">
+            <div class="card-title">Média por Aluno</div>
+            <div style="font-size: 32px; font-weight: bold; color: #27ae60;">{int(media)}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with kpi3:
+        st.markdown(f"""
+        <div class="dashboard-card" style="text-align:center;">
+            <div class="card-title">Total de Aulas</div>
+            <div style="font-size: 32px; font-weight: bold; color: #7f8c8d;">{len(df)}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # SELEÇÃO DE USUÁRIO (AVATARS)
-    st.subheader("Quem é você?")
-    colunas_avatar = st.columns(len(LISTA_USUARIOS))
+    # 1.2 Área de Seleção de Perfil (Avatars)
+    st.markdown("### 👤 Selecione seu Perfil")
+    
+    # Cria linhas de 6 colunas para os avatares
+    cols_avatar = st.columns(6)
     
     for i, user in enumerate(LISTA_USUARIOS):
-        with colunas_avatar[i]:
-            # Tenta carregar a imagem, se falhar usa um emoji
-            try:
-                st.image(USUARIOS_CONFIG[user]["img"], use_container_width=True)
-            except:
-                st.markdown(f"👤 **{user}**") # Fallback se imagem não existir
+        with cols_avatar[i]:
+            # HTML customizado para imagem redonda com borda colorida
+            cor = USUARIOS_CONFIG[user]['color']
+            img = USUARIOS_CONFIG[user]['img']
             
-            # Botão com a cor do usuário
-            cor_btn = USUARIOS_CONFIG[user]['color']
-            if st.button(f"Entrar", key=f"login_{user}"):
-                if user in colunas_validas:
-                    ir_para_usuario(user)
-                else:
-                    st.error("Usuário não encontrado na planilha.")
+            # Verifica se imagem existe (fallback visual)
+            try:
+                # O style border aqui garante a cor do anel em volta
+                st.markdown(f"""
+                <div class="avatar-container">
+                    <img src="app/static/{img}" class="avatar-img" style="border: 4px solid {cor};" onerror="this.style.display='none'">
+                    <div class="avatar-name">{user}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            except: pass
+            
+            # Botão Streamlit normal abaixo da imagem visual
+            if st.button("Acessar", key=f"btn_login_{user}"):
+                if user in colunas_validas: ir_para_usuario(user)
+                else: st.toast(f"Usuário {user} não encontrado na planilha!", icon="⚠️")
 
     st.markdown("---")
-    
-    # ESTATÍSTICAS
-    c1, c2 = st.columns([0.4, 0.6])
+
+    # 1.3 Gráficos Lado a Lado (Cards)
+    c1, c2 = st.columns(2)
     
     with c1:
-        st.subheader("🏆 Ranking Geral")
-        st.plotly_chart(renderizar_grafico_ranking(df), use_container_width=True)
-        
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_ranking_clean(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
     with c2:
-        st.subheader("📚 Disciplinas Populares")
-        st.plotly_chart(renderizar_heatmap_disciplinas(df), use_container_width=True)
+        st.markdown('<div class="dashboard-card">', unsafe_allow_html=True)
+        st.markdown('<div class="card-title">🔥 Disciplinas Mais Populares (Top 8)</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_top_disciplinas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("🧠 Foco de Cada Aluno (Disciplina Favorita)")
-    
-    cols_stats = st.columns(len(colunas_validas))
-    for i, user in enumerate(colunas_validas):
-        disc_top, qtd = get_disciplina_mais_estudada(df, user)
-        with cols_stats[i]:
-            st.markdown(f"<div style='border-top: 4px solid {USUARIOS_CONFIG[user]['color']}; padding-top: 5px;'><strong>{user}</strong></div>", unsafe_allow_html=True)
-            st.caption(f"{disc_top}")
-            st.markdown(f"**{qtd}** aulas")
-
-# --- 2. ÁREA DO USUÁRIO (HOME) ---
+# ==========================================================
+# 2. ÁREA DO USUÁRIO
+# ==========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
+    cor_user = USUARIOS_CONFIG[user]['color']
     
-    # Header com botão de voltar
-    c_back, c_title = st.columns([0.15, 0.85])
+    # Barra Superior
+    c_back, c_info = st.columns([0.1, 0.9])
     with c_back:
-        if st.button("⬅ Dashboard"): ir_para_dashboard()
-    with c_title:
-        st.title(f"Olá, {user}!")
+        if st.button("🏠"): ir_para_dashboard()
+    with c_info:
+        st.markdown(f"<h2 style='margin:0; color:{cor_user}'>Olá, {user}!</h2>", unsafe_allow_html=True)
+        
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # Progresso Pessoal
+    # Progresso Geral
     coluna_user = df[user].apply(limpar_booleano)
     pct_total = coluna_user.sum() / len(df) if len(df) > 0 else 0
     
-    st.markdown(
-        f"""
-        <div style="background-color: {USUARIOS_CONFIG[user]['color']}20; padding: 15px; border-radius: 10px; border-left: 5px solid {USUARIOS_CONFIG[user]['color']}">
-        <h3 style="margin:0; color: {USUARIOS_CONFIG[user]['color']}">Progresso Total: {int(pct_total*100)}%</h3>
+    # Card de Progresso
+    st.markdown(f"""
+    <div style="background-color: white; border-left: 6px solid {cor_user}; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 25px;">
+        <span style="font-size: 18px; color: #777;">Progresso Total da Residência</span>
+        <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+            <span style="font-size: 36px; font-weight: bold; color: {cor_user};">{int(pct_total*100)}%</span>
+            <span style="font-size: 14px; color: #999;">{coluna_user.sum()} de {len(df)} aulas</span>
         </div>
-        <br>
-        """, unsafe_allow_html=True
-    )
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Barra de progresso visual
     st.progress(pct_total)
-
+    
     # Grid de Disciplinas
+    st.markdown("### Suas Disciplinas")
+    
     ordem = [
         "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", 
         "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", 
@@ -290,41 +364,40 @@ elif st.session_state['pagina_atual'] == 'user_home':
         
         with col_atual:
             with st.container(border=True):
-                # Título Colorido se concluído
-                cor_titulo = USUARIOS_CONFIG[user]['color'] if pct_d > 0 else "black"
-                st.markdown(f"### <span style='color:{cor_titulo}'>{disciplina}</span>", unsafe_allow_html=True)
+                # Cabeçalho da disciplina com cor dinâmica
+                st.markdown(f"<h4 style='margin-bottom:0;'>{disciplina}</h4>", unsafe_allow_html=True)
                 
+                # Barra de progresso mini
                 st.progress(pct_d)
-                c1, c2 = st.columns([0.7, 0.3])
-                c1.caption(f"**{int(pct_d*100)}%** — {feitos_d}/{total_d} aulas")
                 
-                if c2.button("Abrir ➝", key=f"btn_{disciplina}_{user}"):
+                c_meta, c_act = st.columns([0.6, 0.4])
+                c_meta.caption(f"{int(pct_d*100)}% ({feitos_d}/{total_d})")
+                
+                if c_act.button("Abrir ➝", key=f"btn_{disciplina}_{user}"):
                     ir_para_disciplina(disciplina)
 
-# --- 3. MODO FOCO (DISCIPLINA) ---
+# ==========================================================
+# 3. MODO FOCO
+# ==========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
     disciplina = st.session_state['disciplina_ativa']
+    cor_user = USUARIOS_CONFIG[user]['color']
     
-    c_back, c_title = st.columns([0.2, 0.8])
-    with c_back:
-        if st.button(f"⬅ Voltar"): voltar_para_usuario()
-    with c_title:
-        st.markdown(f"## 📖 {disciplina}")
+    c_btn, c_tit = st.columns([0.15, 0.85])
+    with c_btn:
+        if st.button("⬅ Voltar"): voltar_para_usuario()
+    with c_tit:
+        st.markdown(f"<h2 style='color: {cor_user}'>📖 {disciplina}</h2>", unsafe_allow_html=True)
 
-    # Índice da coluna para salvar
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
 
     df_disc = df[df['Disciplina'] == disciplina]
     status = df_disc[user].apply(limpar_booleano)
-    feitos = status.sum()
-    total = len(df_disc)
-    pct = feitos / total if total > 0 else 0
     
-    st.progress(pct)
-    st.caption(f"**{user}**, você viu {feitos} de {total} aulas.")
-    st.markdown("---")
+    # Barra Sticky no topo (opcional, mas visualmente agradável)
+    st.info(f"Visualizando como **{user}** • {status.sum()} / {len(df_disc)} aulas concluídas")
     
     for idx, row in df_disc.iterrows():
         checked = limpar_booleano(row[user])
@@ -332,18 +405,18 @@ elif st.session_state['pagina_atual'] == 'focus':
         c_chk, c_txt = st.columns([0.05, 0.95])
         with c_chk:
             key = f"chk_{idx}_{user}"
-            # Checkbox com cor personalizada via CSS hack ou padrão
             novo = st.checkbox("Marcar", value=checked, key=key, label_visibility="collapsed")
             
         with c_txt:
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
             if checked:
-                st.markdown(f"<span style='color:{USUARIOS_CONFIG[user]['color']}; opacity:0.7; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+                # Estilo riscado com a cor do usuário
+                st.markdown(f"<span style='color:{cor_user}; opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
             else:
-                st.markdown(txt)
+                st.markdown(f"<span style='color: #333;'>{txt}</span>", unsafe_allow_html=True)
         
         if novo != checked:
             atualizar_status(worksheet, idx, col_idx, novo)
-            st.toast("Status atualizado!", icon="💾")
+            st.toast("Salvo com sucesso!", icon="✨")
             time.sleep(0.5)
             st.rerun()
