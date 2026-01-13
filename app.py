@@ -7,10 +7,9 @@ import time
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Residência", page_icon="🩺", layout="wide")
 
-# --- CSS Personalizado (Cards e Botões) ---
+# --- CSS Personalizado ---
 st.markdown("""
     <style>
-    /* Ajuste do container */
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
     /* Estilo do Card na Grid */
@@ -21,23 +20,22 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         transition: transform 0.2s;
     }
-    
     div[data-testid="stVerticalBlockBorderWrapper"]:hover {
         border-color: #3498db;
         transform: translateY(-2px);
         box-shadow: 0 8px 12px rgba(0,0,0,0.1);
     }
     
-    /* Botão de "Voltar" */
+    /* Botão dentro do Card */
     div.stButton > button {
-        width: 100%;
-        border-radius: 8px;
+        width: 100%; 
+        border-radius: 8px; 
         font-weight: bold;
     }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Configurações da Planilha ---
+# --- Configurações ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 
 # --- Conexão Google Sheets ---
@@ -49,29 +47,44 @@ def conectar_google_sheets():
         return gspread.authorize(credentials)
     except: return None
 
+# Função de carregamento com RETRY (Anti-Erro)
 def carregar_dados():
     gc = conectar_google_sheets()
     if not gc: return pd.DataFrame(), None
-    try:
-        sh = gc.open_by_url(PLANILHA_URL)
-        try: worksheet = sh.worksheet("Dados")
-        except: worksheet = sh.get_worksheet(0)
-        return pd.DataFrame(worksheet.get_all_records()), worksheet
-    except: return pd.DataFrame(), None
+    
+    # Tenta ler até 3 vezes se der erro de conexão
+    for tentativa in range(3):
+        try:
+            sh = gc.open_by_url(PLANILHA_URL)
+            try: worksheet = sh.worksheet("Dados")
+            except: worksheet = sh.get_worksheet(0)
+            
+            return pd.DataFrame(worksheet.get_all_records()), worksheet
+        except Exception as e:
+            time.sleep(1.5) # Espera um pouco
+            if tentativa == 2:
+                st.error(f"O servidor do Google está instável. Erro: {e}")
+                return pd.DataFrame(), None
 
-def atualizar_status(worksheet, row_index, col_name, novo_valor):
+# Salvar Otimizado (Usa índice numérico da coluna)
+def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
     try:
-        col_index = worksheet.find(col_name).col
-        worksheet.update_cell(row_index + 2, col_index, novo_valor)
-        st.toast("✅ Salvo!", icon="💾")
-    except: st.error("Erro ao salvar.")
+        # row_index + 2 (cabeçalho + base 1 do gspread)
+        worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
+    except Exception as e:
+        st.warning("Tentando salvar novamente...")
+        time.sleep(1)
+        try:
+            worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
+        except:
+            st.error("Erro ao salvar. Verifique sua internet.")
 
 def limpar_booleano(valor):
     if isinstance(valor, bool): return valor
     if isinstance(valor, str): return valor.upper() == 'TRUE'
     return False
 
-# --- Inicialização de Estado (Session State) ---
+# --- Inicialização de Estado ---
 if 'disciplina_ativa' not in st.session_state:
     st.session_state['disciplina_ativa'] = None
 
@@ -82,10 +95,17 @@ df, worksheet = carregar_dados()
 if not df.empty and worksheet is not None:
     usuarios = ["Ana Clara", "Gabriel", "Newton"]
     
-    # --- Sidebar ---
+    # Sidebar
     st.sidebar.title("🩺 MedTracker")
     usuario_selecionado = st.sidebar.selectbox("Perfil", usuarios)
     
+    # Otimização: Índice da coluna do usuário
+    try:
+        coluna_usuario_idx = df.columns.get_loc(usuario_selecionado) + 1
+    except:
+        st.error("Usuário não encontrado na planilha.")
+        coluna_usuario_idx = 0
+
     st.sidebar.markdown("---")
     st.sidebar.subheader("🏆 Ranking")
     
@@ -98,18 +118,17 @@ if not df.empty and worksheet is not None:
     
     for i, data in enumerate(ranking_data):
         medalha = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}º"
-        col_rk1, col_rk2 = st.sidebar.columns([0.8, 0.2])
-        col_rk1.write(f"{medalha} {data['nome']}")
-        col_rk1.progress(data['pct'])
-        col_rk2.write(f"{int(data['pct']*100)}%")
+        c1, c2 = st.sidebar.columns([0.8, 0.2])
+        c1.write(f"{medalha} {data['nome']}")
+        c1.progress(data['pct'])
+        c2.write(f"{int(data['pct']*100)}%")
 
-    # --- Lógica de Visualização (Grade vs Foco) ---
+    # --- Lógica de Visualização ---
     
-    # 1. Modo FOCO (Disciplina Aberta em Tela Cheia)
+    # 1. Modo FOCO (Disciplina Aberta)
     if st.session_state['disciplina_ativa']:
         disciplina_atual = st.session_state['disciplina_ativa']
         
-        # Botão para voltar
         if st.button("⬅️ Voltar para todas as disciplinas"):
             st.session_state['disciplina_ativa'] = None
             st.rerun()
@@ -123,28 +142,19 @@ if not df.empty and worksheet is not None:
         pct = feitos / total if total > 0 else 0
         
         st.progress(pct)
-        st.caption(f"Progresso: {int(pct*100)}% ({feitos}/{total} aulas)")
+        # Texto detalhado também no modo foco
+        st.caption(f"**Status:** {int(pct*100)}% concluído — {feitos} de {total} aulas assistidas")
         st.markdown("---")
         
-        # Lista de Aulas (Checkboxes)
         for idx, row in df_disc.iterrows():
             checked = limpar_booleano(row[usuario_selecionado])
             
-            c_check, c_text = st.columns([0.05, 0.95])
-            with c_check:
+            c_chk, c_txt = st.columns([0.05, 0.95])
+            with c_chk:
                 key = f"chk_focus_{idx}_{usuario_selecionado}"
+                novo = st.checkbox("Marcar", value=checked, key=key, label_visibility="collapsed")
                 
-                # --- CORREÇÃO AQUI ---
-                # Adicionamos um rótulo ("Marcar") e usamos label_visibility="collapsed"
-                # Isso satisfaz o sistema e esconde o texto para o usuário
-                novo = st.checkbox(
-                    "Marcar", 
-                    value=checked, 
-                    key=key, 
-                    label_visibility="collapsed"
-                )
-                
-            with c_text:
+            with c_txt:
                 txt = f"**Semana {row['Semana']}**: {row['Aula']}"
                 if checked:
                     st.markdown(f"<span style='color:gray; text-decoration:line-through; opacity:0.6'>{txt}</span>", unsafe_allow_html=True)
@@ -152,13 +162,13 @@ if not df.empty and worksheet is not None:
                     st.markdown(txt)
             
             if novo != checked:
-                atualizar_status(worksheet, idx, usuario_selecionado, novo)
-                time.sleep(0.5)
+                atualizar_status(worksheet, idx, coluna_usuario_idx, novo)
+                st.toast("✅ Salvo!", icon="💾")
+                time.sleep(0.5) 
                 st.rerun()
 
-    # 2. Modo GRADE (Cards 2 por linha)
+    # 2. Modo GRADE (Cards)
     else:
-        # Cabeçalho do usuário
         coluna_user = df[usuario_selecionado].apply(limpar_booleano)
         pct_total = coluna_user.sum() / len(df) if len(df) > 0 else 0
         
@@ -167,7 +177,6 @@ if not df.empty and worksheet is not None:
         st.progress(pct_total)
         st.markdown("---")
         
-        # Preparação das Disciplinas
         ordem = [
             "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", 
             "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", 
@@ -177,31 +186,29 @@ if not df.empty and worksheet is not None:
         disc_existentes = df['Disciplina'].unique()
         lista_final = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
         
-        # Criação das colunas (Grid 2xN)
         cols = st.columns(2)
         
         for i, disciplina in enumerate(lista_final):
-            # Alterna entre coluna 0 e 1
             col_atual = cols[i % 2]
-            
             df_d = df[df['Disciplina'] == disciplina]
             feitos_d = df_d[usuario_selecionado].apply(limpar_booleano).sum()
             total_d = len(df_d)
             pct_d = feitos_d / total_d if total_d > 0 else 0
             
             with col_atual:
-                # Container com borda (Card Visual)
                 with st.container(border=True):
-                    # Cabeçalho do Card
                     st.markdown(f"### {disciplina}")
                     st.progress(pct_d)
                     
-                    c1, c2 = st.columns([0.7, 0.3])
-                    c1.caption(f"{int(pct_d*100)}% concluído")
+                    # Layout Coluna: Texto Informativo | Botão
+                    c1, c2 = st.columns([0.65, 0.35])
+                    
+                    # --- AQUI ESTÁ A MUDANÇA SOLICITADA ---
+                    c1.caption(f"**{int(pct_d*100)}%** — {feitos_d} de {total_d} aulas")
                     
                     if c2.button("Abrir ➝", key=f"btn_{disciplina}"):
                         st.session_state['disciplina_ativa'] = disciplina
                         st.rerun()
 
 else:
-    st.error("Erro ao carregar dados.")
+    st.error("Aguardando conexão com o Google...")
