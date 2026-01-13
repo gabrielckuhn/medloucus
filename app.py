@@ -36,10 +36,8 @@ st.markdown("""
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
     
-    /* REMOVE TEXTO DE LEGENDA DOS GRÁFICOS */
     .js-plotly-plot .plotly .modebar { display: none !important; }
     
-    /* HEADER PERFIL */
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
@@ -167,39 +165,52 @@ if st.session_state['pagina_atual'] == 'dashboard':
 
     st.markdown("### 👤 Selecione seu Perfil")
     
-    # CSS DA ANIMAÇÃO E BOTÕES ESPECÍFICOS
+    # === CSS MÁGICO DO HOVER ===
     st.markdown("""
     <style>
-    /* Animação apenas na Imagem */
+    /* Animação da Imagem */
     .avatar-img {
         width: 140px; height: 140px;
         border-radius: 50%; object-fit: cover;
         box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         display: block;
-        margin: 0 auto 15px auto; /* Centraliza e dá espaço embaixo */
+        margin: 0 auto 10px auto; 
     }
     
-    /* Hover na imagem faz ela subir */
-    .avatar-img:hover {
+    /* Quando passar o mouse na COLUNA INTEIRA, a imagem sobe */
+    div[data-testid="column"]:hover .avatar-img {
         transform: translateY(-10px) scale(1.08);
     }
     
-    /* Centralizar Botões dentro das colunas */
+    /* Centralizar Botões */
     div[data-testid="column"] .stButton {
-        text-align: center;
-        display: flex;
-        justify-content: center;
+        display: flex; justify-content: center;
+        width: 100%;
     }
-    
-    /* Estilo Base do Botão */
+
+    /* ESTADO INVISÍVEL DO BOTÃO (PADRÃO) */
     div[data-testid="column"] .stButton button {
+        opacity: 0; /* Invisível */
+        pointer-events: none; /* Não clicável quando invisível */
         border-radius: 20px;
-        padding: 0.5rem 1rem;
         font-weight: 600;
-        transition: all 0.3s ease;
-        border: 1px solid #ddd;
+        
+        /* A MÁGICA DO DELAY:
+           Quando o mouse sai, ele espera 2s antes de começar a sumir */
+        transition: opacity 0.5s ease 2s, transform 0.3s ease 0s, box-shadow 0.3s ease 0s;
     }
+
+    /* ESTADO VISÍVEL DO BOTÃO (HOVER) */
+    div[data-testid="column"]:hover .stButton button,
+    div[data-testid="column"] .stButton button:hover {
+        opacity: 1; /* Visível */
+        pointer-events: auto; /* Clicável */
+        
+        /* Quando o mouse entra, o delay é 0 (aparece na hora) */
+        transition-delay: 0s;
+    }
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -210,26 +221,24 @@ if st.session_state['pagina_atual'] == 'dashboard':
             cor = USUARIOS_CONFIG[user]['color']
             img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             
-            # 1. IMAGEM (HTML Puro com Animação)
+            # 1. IMAGEM
             if img:
                 st.markdown(f'<img src="{img}" class="avatar-img" style="border: 4px solid {cor};">', unsafe_allow_html=True)
             else:
                 st.markdown(f'<div class="avatar-img" style="border: 4px solid {cor}; background:#eee; display:flex; align-items:center; justify-content:center; font-size:40px;">{user[0]}</div>', unsafe_allow_html=True)
             
-            # 2. BOTÃO "ENTRAR" (Nativo do Streamlit)
+            # 2. BOTÃO (Renderizado sempre, mas oculto pelo CSS acima)
             if st.button(f"Entrar {user}", key=f"btn_{user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
             
-            # 3. CSS DINÂMICO PARA O BOTÃO (Injetado logo após o botão)
-            # Usamos nth-of-type para garantir que pegamos o botão desta coluna específica
-            # O seletor :hover cria o brilho na cor da pessoa
+            # 3. CSS DO BRILHO NA COR DO USUÁRIO
             css_btn = f"""
             <style>
             div[data-testid="column"]:nth-of-type({i+1}) .stButton button:hover {{
                 border-color: {cor} !important;
                 color: {cor} !important;
-                box-shadow: 0 0 15px {cor}60 !important; /* Cor com transparência */
+                box-shadow: 0 0 15px {cor}60 !important;
                 transform: scale(1.05);
             }}
             </style>
