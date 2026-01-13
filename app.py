@@ -2,164 +2,198 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import time
 
 # --- Configuração da Página ---
-st.set_page_config(page_title="MedTracker Estudo", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="MedTracker Residência", page_icon="🩺", layout="wide")
+
+# --- CSS Personalizado (Cards e Botões) ---
+st.markdown("""
+    <style>
+    /* Ajuste do container */
+    .block-container {padding-top: 2rem; padding-bottom: 5rem;}
+    
+    /* Estilo do Card na Grid */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: white;
+        border-radius: 12px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        transition: transform 0.2s;
+    }
+    
+    div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+        border-color: #3498db;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 12px rgba(0,0,0,0.1);
+    }
+    
+    /* Botão de "Voltar" */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- Configurações da Planilha ---
-# URL fornecida
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 
-# --- Conexão com Google Sheets ---
+# --- Conexão Google Sheets ---
 @st.cache_resource
 def conectar_google_sheets():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    
-    # Tenta carregar as credenciais dos segredos do Streamlit
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
-        credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scopes
-        )
-        gc = gspread.authorize(credentials)
-        return gc
-    except Exception as e:
-        st.error(f"Erro nas credenciais: {e}. Verifique se o segredo 'gcp_service_account' está configurado corretamente no Streamlit Cloud.")
-        return None
+        credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        return gspread.authorize(credentials)
+    except: return None
 
-# Função para carregar dados
 def carregar_dados():
     gc = conectar_google_sheets()
-    if not gc:
-        return pd.DataFrame(), None
-
+    if not gc: return pd.DataFrame(), None
     try:
-        # Abre a planilha pelo URL direto (mais robusto)
         sh = gc.open_by_url(PLANILHA_URL)
-        
-        # Tenta pegar a aba "Dados", se não existir, pega a primeira aba (índice 0)
-        try:
-            worksheet = sh.worksheet("Dados")
-        except gspread.WorksheetNotFound:
-            worksheet = sh.get_worksheet(0)
-            
-        dados = worksheet.get_all_records()
-        df = pd.DataFrame(dados)
-        return df, worksheet
-    except Exception as e:
-        st.error(f"Erro ao acessar a planilha. Verifique se o bot (medtracker10bot@...) é Editor no compartilhamento. Detalhe: {e}")
-        return pd.DataFrame(), None
+        try: worksheet = sh.worksheet("Dados")
+        except: worksheet = sh.get_worksheet(0)
+        return pd.DataFrame(worksheet.get_all_records()), worksheet
+    except: return pd.DataFrame(), None
 
-# Função para salvar a alteração (checkbox)
 def atualizar_status(worksheet, row_index, col_name, novo_valor):
     try:
-        # Encontra o índice da coluna (gspread usa base 1)
         col_index = worksheet.find(col_name).col
-        # A linha é row_index + 2 (1 pelo cabeçalho + 1 porque gspread é base 1 e dataframe é base 0)
-        gspread_row = row_index + 2
-        
-        # Atualiza a célula no Google Sheets
-        worksheet.update_cell(gspread_row, col_index, novo_valor)
-        st.toast(f"Salvo com sucesso!", icon="✅")
-    except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+        worksheet.update_cell(row_index + 2, col_index, novo_valor)
+        st.toast("✅ Salvo!", icon="💾")
+    except: st.error("Erro ao salvar.")
 
-# --- Interface Principal ---
+def limpar_booleano(valor):
+    if isinstance(valor, bool): return valor
+    if isinstance(valor, str): return valor.upper() == 'TRUE'
+    return False
 
-st.title("🩺 Acompanhamento de Estudos - Residência")
+# --- Inicialização de Estado (Session State) ---
+# Isso permite lembrar qual disciplina está "Aberta"
+if 'disciplina_ativa' not in st.session_state:
+    st.session_state['disciplina_ativa'] = None
+
+# --- App Principal ---
 
 df, worksheet = carregar_dados()
 
 if not df.empty and worksheet is not None:
-    # Definição dos usuários
     usuarios = ["Ana Clara", "Gabriel", "Newton"]
     
-    # Verifica se as colunas dos usuários existem no dataframe
-    if not all(u in df.columns for u in usuarios):
-        st.error(f"As colunas {usuarios} não foram encontradas na planilha. Verifique os cabeçalhos.")
-    else:
-        st.sidebar.header("Perfil")
-        usuario_selecionado = st.sidebar.radio("Selecione quem está estudando:", usuarios)
-        
-        st.sidebar.markdown("---")
-        st.sidebar.info(f"Bem-vindo(a), **{usuario_selecionado}**! Seu progresso é salvo automaticamente.")
+    # --- Sidebar ---
+    st.sidebar.title("🩺 MedTracker")
+    usuario_selecionado = st.sidebar.selectbox("Perfil", usuarios)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🏆 Ranking")
+    
+    ranking_data = []
+    total_global = len(df)
+    for user in usuarios:
+        pct = df[user].apply(limpar_booleano).sum() / total_global if total_global > 0 else 0
+        ranking_data.append({"nome": user, "pct": pct})
+    ranking_data.sort(key=lambda x: (-x['pct'], x['nome']))
+    
+    for i, data in enumerate(ranking_data):
+        medalha = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}º"
+        col_rk1, col_rk2 = st.sidebar.columns([0.8, 0.2])
+        col_rk1.write(f"{medalha} {data['nome']}")
+        col_rk1.progress(data['pct'])
+        col_rk2.write(f"{int(data['pct']*100)}%")
 
-        # Lista de Disciplinas na ordem solicitada
-        ordem_disciplinas = [
+    # --- Lógica de Visualização (Grade vs Foco) ---
+    
+    # 1. Modo FOCO (Disciplina Aberta em Tela Cheia)
+    if st.session_state['disciplina_ativa']:
+        disciplina_atual = st.session_state['disciplina_ativa']
+        
+        # Botão para voltar
+        if st.button("⬅️ Voltar para todas as disciplinas"):
+            st.session_state['disciplina_ativa'] = None
+            st.rerun()
+            
+        st.markdown(f"## 📖 {disciplina_atual}")
+        
+        df_disc = df[df['Disciplina'] == disciplina_atual]
+        status = df_disc[usuario_selecionado].apply(limpar_booleano)
+        feitos = status.sum()
+        total = len(df_disc)
+        pct = feitos / total if total > 0 else 0
+        
+        st.progress(pct)
+        st.caption(f"Progresso: {int(pct*100)}% ({feitos}/{total} aulas)")
+        st.markdown("---")
+        
+        # Lista de Aulas (Checkboxes)
+        for idx, row in df_disc.iterrows():
+            checked = limpar_booleano(row[usuario_selecionado])
+            
+            c_check, c_text = st.columns([0.05, 0.95])
+            with c_check:
+                key = f"chk_focus_{idx}_{usuario_selecionado}"
+                novo = st.checkbox("", value=checked, key=key)
+            with c_text:
+                txt = f"**Semana {row['Semana']}**: {row['Aula']}"
+                if checked:
+                    st.markdown(f"<span style='color:gray; text-decoration:line-through; opacity:0.6'>{txt}</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(txt)
+            
+            if novo != checked:
+                atualizar_status(worksheet, idx, usuario_selecionado, novo)
+                time.sleep(0.5) # Pequeno delay para garantir sincronia visual
+                st.rerun()
+
+    # 2. Modo GRADE (Cards 2 por linha)
+    else:
+        # Cabeçalho do usuário
+        coluna_user = df[usuario_selecionado].apply(limpar_booleano)
+        pct_total = coluna_user.sum() / len(df) if len(df) > 0 else 0
+        
+        st.title(f"Painel de {usuario_selecionado}")
+        st.metric("Progresso Geral da Residência", f"{int(pct_total*100)}%")
+        st.progress(pct_total)
+        st.markdown("---")
+        
+        # Preparação das Disciplinas
+        ordem = [
             "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", 
             "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", 
             "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", 
             "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"
         ]
+        disc_existentes = df['Disciplina'].unique()
+        lista_final = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
         
-        # Filtra disciplinas presentes na planilha
-        if "Disciplina" in df.columns:
-            disciplinas_existentes = df['Disciplina'].unique()
-            disciplinas_para_mostrar = [d for d in ordem_disciplinas if d in disciplinas_existentes]
-            # Adiciona disciplinas extras se houver na planilha
-            extras = [d for d in disciplinas_existentes if d not in ordem_disciplinas]
-            disciplinas_para_mostrar.extend(extras)
-
-            # --- Loop das Disciplinas ---
-            for disciplina in disciplinas_para_mostrar:
-                # Filtra os dados apenas dessa disciplina
-                df_disc = df[df['Disciplina'] == disciplina]
-                
-                # Tratamento de dados: Converte "TRUE"/"FALSE" texto para booleano real para fazer a conta
-                coluna_usuario = df_disc[usuario_selecionado].astype(str).str.upper()
-                # Cria uma série booleana temporária apenas para cálculo
-                is_completed_series = coluna_usuario.apply(lambda x: True if x == 'TRUE' else False)
-
-                total_aulas = len(df_disc)
-                aulas_assistidas = is_completed_series.sum()
-                progresso = aulas_assistidas / total_aulas if total_aulas > 0 else 0
-                
-                texto_progresso = f"{int(progresso * 100)}% ({aulas_assistidas}/{total_aulas})"
-
-                # Expander da disciplina
-                with st.expander(f"**{disciplina}** - {texto_progresso}"):
-                    st.progress(progresso)
+        # Criação das colunas (Grid 2xN)
+        cols = st.columns(2)
+        
+        for i, disciplina in enumerate(lista_final):
+            # Alterna entre coluna 0 e 1
+            col_atual = cols[i % 2]
+            
+            df_d = df[df['Disciplina'] == disciplina]
+            feitos_d = df_d[usuario_selecionado].apply(limpar_booleano).sum()
+            total_d = len(df_d)
+            pct_d = feitos_d / total_d if total_d > 0 else 0
+            
+            with col_atual:
+                # Container com borda (Card Visual)
+                with st.container(border=True):
+                    # Cabeçalho do Card
+                    st.markdown(f"### {disciplina}")
+                    st.progress(pct_d)
                     
-                    # Itera sobre cada aula da disciplina
-                    for idx, row in df_disc.iterrows():
-                        # Valor atual na célula (pode ser bool ou string 'FALSE')
-                        valor_atual = row[usuario_selecionado]
-                        
-                        # Normaliza para booleano do Python para o checkbox entender
-                        checked = False
-                        if isinstance(valor_atual, bool):
-                            checked = valor_atual
-                        elif isinstance(valor_atual, str):
-                            checked = (valor_atual.upper() == 'TRUE')
-                        
-                        col1, col2 = st.columns([0.05, 0.95])
-                        
-                        with col1:
-                            # Checkbox
-                            key_check = f"chk_{idx}_{usuario_selecionado}"
-                            novo_valor = st.checkbox(
-                                label="",
-                                value=checked,
-                                key=key_check
-                            )
+                    c1, c2 = st.columns([0.7, 0.3])
+                    c1.caption(f"{int(pct_d*100)}% concluído")
+                    
+                    # O Botão que ativa o Modo Foco
+                    if c2.button("Abrir ➝", key=f"btn_{disciplina}"):
+                        st.session_state['disciplina_ativa'] = disciplina
+                        st.rerun()
 
-                        with col2:
-                            semana = row.get('Semana', '-')
-                            aula_nome = row.get('Aula', 'Sem nome')
-                            # Exibe info da aula
-                            st.write(f"**Semana {semana}**: {aula_nome}")
-
-                        # Se o usuário clicou, o valor muda e salvamos
-                        if novo_valor != checked:
-                            atualizar_status(worksheet, idx, usuario_selecionado, novo_valor)
-                            st.rerun() # Recarrega para atualizar a barra de progresso
-        else:
-            st.error("Coluna 'Disciplina' não encontrada na planilha.")
-
-elif worksheet is None:
-    st.warning("Tentativa de conexão finalizada, mas a planilha não retornou dados.")
 else:
-    st.warning("A planilha está vazia.")
+    st.error("Erro ao carregar dados.")
