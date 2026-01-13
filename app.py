@@ -5,18 +5,23 @@ from google.oauth2.service_account import Credentials
 import time
 import plotly.graph_objects as go
 import base64
+import os # Importante para checar se o arquivo existe
 
-# --- Configuração da Página (Deve ser o primeiro comando) ---
+# --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
 # --- Funções Auxiliares ---
 def get_image_as_base64(path):
+    """Lê a imagem e converte para base64 para uso no CSS."""
+    if not os.path.exists(path):
+        return None
     try:
         with open(path, "rb") as f:
             data = f.read()
         encoded = base64.b64encode(data).decode()
         return f"data:image/png;base64,{encoded}"
-    except:
+    except Exception as e:
+        st.error(f"Erro ao ler {path}: {e}")
         return None
 
 # --- CSS GLOBAL ---
@@ -39,14 +44,14 @@ st.markdown("""
     /* REMOVE TEXTO DE LEGENDA DOS GRÁFICOS */
     .js-plotly-plot .plotly .modebar { display: none !important; }
     
-    /* HEADER PERFIL NA PAGINA INTERNA */
+    /* HEADER PERFIL */
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
 
-    /* Centralizar botões nas colunas */
+    /* Centralizar botões */
     div[data-testid="column"] .stButton {
         display: flex;
         justify-content: center;
@@ -58,6 +63,7 @@ st.markdown("""
 # --- Dados ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 
+# IMPORTANTE: Certifique-se que estas imagens (gabriel.png, etc) estão na MESMA pasta que o app.py
 USUARIOS_CONFIG = {
     "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
     "Arthur":    {"color": "#263149", "img": "arthur.png"},
@@ -176,22 +182,36 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown("### 👤 Selecione seu Perfil")
     
     # --- ÁREA DE AVATARES CLICÁVEIS ---
+    # Mostra o caminho atual para ajudar a debugar se as imagens não aparecerem
+    # st.caption(f"Procurando imagens em: {os.getcwd()}") 
+
     cols = st.columns(6)
     
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             cor = USUARIOS_CONFIG[user]['color']
-            img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+            img_nome = USUARIOS_CONFIG[user]['img']
             
-            # Configurações do CSS baseadas na existência da imagem
-            bg_image_style = f"url('{img_b64}')" if img_b64 else "none"
-            bg_color_fallback = "#f0f2f6" if not img_b64 else "transparent"
-            texto_botao = " " if img_b64 else user[0] # Mostra inicial se não tiver imagem
+            # Tenta carregar imagem
+            img_b64 = get_image_as_base64(img_nome)
+            
+            # Verifica se encontrou a imagem
+            encontrou_imagem = img_b64 is not None
+            
+            # Se a imagem não existe, mostra um aviso visual pequeno
+            if not encontrou_imagem:
+                st.warning(f"Faltando:\n{img_nome}")
+            
+            # Configuração do CSS
+            # Se encontrou imagem: usa ela como background, texto vazio, fundo transparente
+            # Se NÃO encontrou: sem background, texto é a inicial, fundo cinza claro
+            bg_image_style = f"url('{img_b64}')" if encontrou_imagem else "none"
+            bg_color_fallback = "transparent" if encontrou_imagem else "#f0f2f6"
+            texto_botao = " " if encontrou_imagem else user[0] 
 
-            # CSS ESPECÍFICO INJETADO PARA ESTE BOTÃO
+            # CSS ESPECÍFICO
             css_btn = f"""
             <style>
-                /* Alvo: botão dentro da coluna específica */
                 div[data-testid="column"]:nth-of-type({i+1}) .stButton button {{
                     background-image: {bg_image_style};
                     background-size: cover;
@@ -200,43 +220,39 @@ if st.session_state['pagina_atual'] == 'dashboard':
                     
                     width: 130px;
                     height: 130px;
-                    border-radius: 50%;
+                    border-radius: 50%; /* Redondo */
                     border: 4px solid {cor};
                     
                     color: {cor};
                     font-size: 40px;
                     font-weight: 700;
                     
-                    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
-                    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+                    transition: transform 0.2s;
+                    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
                 }}
-                
-                /* Efeito Hover */
                 div[data-testid="column"]:nth-of-type({i+1}) .stButton button:hover {{
-                    transform: translateY(-8px) scale(1.05);
-                    box-shadow: 0 10px 20px {cor}60;
+                    transform: scale(1.05);
                     border-color: {cor};
                     color: {cor};
+                    box-shadow: 0 8px 15px {cor}60;
                 }}
-                
-                /* Estado Ativo/Foco */
+                /* Remove comportamento padrão de clique do streamlit */
                 div[data-testid="column"]:nth-of-type({i+1}) .stButton button:active,
                 div[data-testid="column"]:nth-of-type({i+1}) .stButton button:focus:not(:active) {{
-                    background-color: {bg_color_fallback};
                     border-color: {cor};
                     color: {cor};
-                    box-shadow: none;
+                    background-color: {bg_color_fallback};
                 }}
             </style>
             """
             st.markdown(css_btn, unsafe_allow_html=True)
             
-            # O BOTÃO EM SI (Age como a imagem)
+            # O BOTÃO
             if st.button(texto_botao, key=f"btn_avatar_{user}", help=f"Entrar como {user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
             
-            # Nome abaixo do avatar
+            # Legenda com nome
             st.markdown(f"<div style='text-align:center; font-weight:600; color:#555; margin-top:-5px;'>{user}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
@@ -262,13 +278,14 @@ if st.session_state['pagina_atual'] == 'dashboard':
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
-    img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+    img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
     
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅", help="Voltar"): ir_para_dashboard()
     with c_head:
-        img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
+        # Aqui também usamos o Base64 checado
+        img_html = f'<img src="{img_b64}" class="profile-header-img" style="border-color:{cor}">' if img_b64 else ""
         st.markdown(f"""<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>""", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
