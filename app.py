@@ -155,52 +155,69 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     
-    # CSS Específico para o Efeito de Hover e Botão Invisível APENAS nesta página
+    # CSS AVANÇADO: Resolve o problema do botão visível e alinha a animação
     st.markdown("""
     <style>
-    /* Container que envolve a foto e o botão */
-    .avatar-cell {
+    /* 1. Define a coluna como referência de posicionamento */
+    div[data-testid="column"] {
         position: relative;
-        text-align: center;
-        margin-bottom: 20px;
-        transition: transform 0.3s ease; /* Animação suave */
     }
-    
-    /* A Animação de Subir */
-    .avatar-cell:hover {
+
+    /* 2. Estilo do Card Visual (Foto + Nome) */
+    .avatar-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 10px;
+        transition: transform 0.3s ease;
+        /* Garante que o visual não bloqueie o clique do botão que estará por cima */
+        pointer-events: none; 
+    }
+
+    /* 3. A Animação de subir (Aplicada ao passar o mouse na coluna inteira) */
+    div[data-testid="column"]:hover .avatar-card {
         transform: translateY(-15px) scale(1.05);
     }
 
-    /* Imagem */
     .avatar-img {
         width: 150px; height: 150px;
         border-radius: 50%; object-fit: cover;
         box-shadow: 0 5px 15px rgba(0,0,0,0.2);
     }
     
-    /* Texto do Nome */
     .avatar-name {
-        margin-top: 10px;
-        font-weight: 800; font-size: 18px; color: #555; /* Cor Original Cinza */
-        transition: all 0.3s ease;
+        margin-top: 15px;
+        font-weight: 800; font-size: 18px; color: #555; /* Cinza Original */
+        transition: color 0.3s ease, text-shadow 0.3s ease;
     }
     
-    /* MUDANÇA DE COR NO HOVER (BRANCO COM CONTORNO/SOMBRA) */
-    .avatar-cell:hover .avatar-name {
+    /* 4. Nome fica Branco Brilhante no Hover */
+    div[data-testid="column"]:hover .avatar-name {
         color: white !important;
-        /* Cria um contorno com a sombra para o branco aparecer no fundo branco */
+        /* Sombra na cor do usuário para destacar no fundo branco */
         text-shadow: 0px 0px 8px var(--user-color), 0px 0px 8px var(--user-color); 
     }
 
-    /* O BOTÃO INVISÍVEL QUE COBRE TUDO */
-    /* Isso garante que onde clicar na célula, ativa o botão */
-    div[data-testid="column"] button {
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 200px; /* Altura suficiente para cobrir foto + nome */
+    /* 5. O HACK DEFINITIVO DO BOTÃO */
+    /* Isso pega o botão do Streamlit dentro da coluna e o estica sobre tudo */
+    div[data-testid="column"] .stButton button {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        z-index: 99 !important; /* Garante que fique no topo */
         opacity: 0 !important; /* Totalmente invisível */
-        z-index: 10; /* Fica por cima de tudo */
-        cursor: pointer;
+        cursor: pointer !important;
+        display: block !important;
+        color: transparent !important; /* Esconde o texto "Entrar Fulano" */
+    }
+    
+    /* Remove espaçamentos extras que o st.button cria */
+    div[data-testid="column"] .stButton {
+        position: absolute !important;
+        top: 0; left: 0; width: 100%; height: 100%;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -218,37 +235,35 @@ if st.session_state['pagina_atual'] == 'dashboard':
     # SELEÇÃO DE PERFIL
     st.markdown("### 👤 Quem é você?")
     
-    # Criamos colunas. O Streamlit coloca um botão dentro de cada coluna.
-    # O CSS acima (div[data-testid="column"] button) vai esticar esse botão
-    # para cobrir o conteúdo HTML que colocamos antes dele.
-    
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
+            # -- Lógica de Visualização e Botão --
+            
+            # 1. Configurações
             cor = USUARIOS_CONFIG[user]['color']
             img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+            style_var = f"--user-color: {cor};" # Passa a cor para o CSS (Hover glow)
             
-            # Definimos uma variável CSS local para a cor do usuário (usada no text-shadow)
-            style_var = f"--user-color: {cor};"
-            
-            # HTML (Visual)
+            # 2. HTML Visual (A imagem e o nome)
+            # Nota: pointer-events: none no CSS garante que isso não bloqueie o clique
             html_content = f"""
-            <div class="avatar-cell" style="{style_var}">
+            <div class="avatar-card" style="{style_var}">
                 <img src="{img}" class="avatar-img" style="border: 5px solid {cor};">
                 <div class="avatar-name">{user}</div>
             </div>
             """ if img else f"""
-            <div class="avatar-cell" style="{style_var}">
+            <div class="avatar-card" style="{style_var}">
                 <div class="avatar-img" style="border: 5px solid {cor}; background:#eee; display:flex; align-items:center; justify-content:center; font-size:40px;">{user[0]}</div>
                 <div class="avatar-name">{user}</div>
             </div>
             """
-            
             st.markdown(html_content, unsafe_allow_html=True)
             
-            # Botão Invisível (Funcional)
-            # O texto do label não importa, pois opacity: 0 esconde.
-            if st.button(f"Entrar {user}", key=f"btn_{user}"):
+            # 3. O Botão (Interação)
+            # Ele vai ficar INVISÍVEL e COBRIR tudo graças ao CSS acima.
+            # O label garante que a chave seja única, mas o CSS esconde o texto.
+            if st.button(user, key=f"btn_{user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
 
