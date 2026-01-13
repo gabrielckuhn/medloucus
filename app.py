@@ -9,7 +9,6 @@ import base64
 
 # --- Funções Auxiliares (Imagens) ---
 def get_image_as_base64(path):
-    """Lê uma imagem local e converte para string Base64"""
     try:
         with open(path, "rb") as f:
             data = f.read()
@@ -21,100 +20,66 @@ def get_image_as_base64(path):
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
-# --- CSS PRO (Visual Refinado & Hack do Botão na Foto) ---
+# --- CSS PRO (Correção do Clique e Cores) ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
-    /* CARDS DO DASHBOARD */
+    /* CARDS */
     .dashboard-card {
-        background-color: white;
-        border-radius: 15px;
-        padding: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-        border: 1px solid #f0f0f0;
+        background-color: white; border-radius: 15px; padding: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
         margin-bottom: 20px;
-        position: relative;
     }
-    
-    /* TÍTULOS MAIORES (Pedido atendido) */
     .card-title {
-        color: #555; 
-        font-size: 18px; /* Aumentado */
-        font-weight: 700;
-        text-transform: uppercase; 
-        letter-spacing: 0.5px; 
-        margin-bottom: 15px;
-        border-bottom: 2px solid #f0f2f6;
-        padding-bottom: 10px;
+        color: #555; font-size: 18px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.5px;
+        margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
     
-    /* AVATARS E ANIMAÇÃO */
+    /* AVATARS E CLIQUE */
     .avatar-wrapper {
         position: relative;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
+        display: flex; flex-direction: column; align-items: center;
         transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        cursor: pointer;
-        padding: 10px;
-    }
-    .avatar-wrapper:hover {
-        transform: translateY(-10px) scale(1.05);
+        /* Importante: A imagem não pode roubar o clique do botão */
+        pointer-events: none; 
+        z-index: 1;
     }
     
     .avatar-img {
-        border-radius: 50%;
-        width: 150px;
-        height: 150px;
-        object-fit: cover;
-        box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+        border-radius: 50%; width: 150px; height: 150px;
+        object-fit: cover; box-shadow: 0 8px 16px rgba(0,0,0,0.2);
         margin-bottom: 10px;
-        z-index: 1; /* Fica visualmente atrás do botão invisível */
     }
     
-    /* O HACK DO BOTÃO INVISÍVEL */
-    /* Isso faz o botão do Streamlit preencher todo o espaço da foto e ficar transparente */
-    div[data-testid="stButton"] button {
-        border: none;
-        background-color: transparent;
-        color: transparent;
+    /* Animação ao passar o mouse na COLUNA (já que a img tem pointer-events none) */
+    div[data-testid="column"]:hover .avatar-wrapper {
+        transform: translateY(-10px) scale(1.05);
     }
-    /* Estilização específica para garantir que o clique funcione na área */
-    .click-layer {
-        position: absolute;
-        top: 0;
-        left: 0;
+    
+    /* BOTÃO INVISÍVEL (CORREÇÃO) */
+    /* Transforma o botão num bloco que cobre a área acima dele */
+    div[data-testid="column"] button {
+        position: relative;
         width: 100%;
-        height: 100%;
-        z-index: 2;
-        opacity: 0;
+        height: 180px; /* Altura suficiente para cobrir a foto */
+        margin-top: -180px; /* Puxa para cima para cobrir a foto */
+        z-index: 2; /* Garante que está ACIMA da foto */
+        opacity: 0; /* Invisível */
         cursor: pointer;
     }
-
-    /* Nome do Usuário abaixo da foto */
-    .avatar-name {
-        font-weight: 800;
-        font-size: 18px;
-        color: #2c3e50;
-        text-align: center;
-        margin-top: 5px;
+    div[data-testid="column"] button:active {
+        background-color: transparent; border: none;
     }
 
-    /* Header do Perfil (Foto pequena) */
+    /* Outros */
+    .avatar-name { font-weight: 800; font-size: 18px; color: #2c3e50; text-align: center; }
     .profile-header-img {
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        object-fit: cover;
-        border: 3px solid white;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        vertical-align: middle;
-        margin-right: 15px;
+        width: 80px; height: 80px; border-radius: 50%;
+        object-fit: cover; border: 3px solid white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
-
-    /* Limpeza do Plotly */
     .js-plotly-plot .plotly .modebar { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -185,26 +150,39 @@ def voltar_para_usuario():
     st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None})
     st.rerun()
 
-# --- Gráficos ---
+# --- Gráficos Otimizados ---
+
 def renderizar_ranking(df, colunas_validas):
     ranking_data = []
     total = len(df)
     for user in colunas_validas:
         pct = df[user].apply(limpar_booleano).sum() / total * 100
-        ranking_data.append({"Nome": user, "Progresso": pct, "Cor": USUARIOS_CONFIG[user]["color"]})
+        # Texto combina Nome + Porcentagem para ficar DENTRO da barra
+        ranking_data.append({
+            "Nome": user, 
+            "Progresso": pct, 
+            "Cor": USUARIOS_CONFIG[user]["color"],
+            "Label": f"<b>{user}</b>: {pct:.1f}%"
+        })
     
     df_rank = pd.DataFrame(ranking_data).sort_values("Progresso", ascending=True)
     
     fig = go.Figure(go.Bar(
-        x=df_rank["Progresso"], y=df_rank["Nome"], orientation='h',
-        marker=dict(color=df_rank["Cor"], opacity=0.9),
-        text=df_rank["Progresso"].apply(lambda x: f"{x:.0f}%"),
-        textposition='outside', textfont=dict(size=14, color='#333')
+        x=df_rank["Progresso"], 
+        y=df_rank["Nome"], 
+        orientation='h',
+        marker=dict(color=df_rank["Cor"]),
+        text=df_rank["Label"], # Texto formatado
+        textposition='inside', # Força o texto para dentro da cor
+        insidetextanchor='middle',
+        textfont=dict(size=14, color='white') # Texto branco para contraste
     ))
+    
     fig.update_layout(
-        margin=dict(l=0, r=35, t=0, b=0), height=300,
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, tickfont=dict(size=13, family="Arial", color="#333")),
+        margin=dict(l=0, r=10, t=0, b=0), height=300,
+        # Esconde o eixo Y antigo (nomes cinzas) pois agora estão na barra
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
     )
     return fig
@@ -230,15 +208,10 @@ def renderizar_top_disciplinas(df, colunas_validas):
 
 def renderizar_favoritas(df, colunas_validas):
     data = []
-    # Para cada usuário, descobre a disciplina com maior % de conclusão
     for user in colunas_validas:
-        max_pct = 0
-        fav_disc = "Nenhuma"
-        
-        # Agrupa por disciplina e calcula %
+        max_pct = 0; fav_disc = "—"
         temp = df[df['Disciplina'].isin(df['Disciplina'].unique())].copy()
         
-        # Loop manual por disciplina para garantir cálculo correto
         for disc in temp['Disciplina'].unique():
             df_d = temp[temp['Disciplina'] == disc]
             total_d = len(df_d)
@@ -246,33 +219,25 @@ def renderizar_favoritas(df, colunas_validas):
             if total_d > 0:
                 pct = feitos / total_d
                 if pct > max_pct:
-                    max_pct = pct
-                    fav_disc = disc
+                    max_pct = pct; fav_disc = disc
         
-        # Só adiciona se tiver algum progresso
         if max_pct > 0:
-            data.append({
-                "User": user,
-                "Disciplina": fav_disc,
-                "Pct": max_pct * 100,
-                "Cor": USUARIOS_CONFIG[user]["color"]
-            })
+            data.append({"User": user, "Disciplina": fav_disc, "Pct": max_pct * 100, "Cor": USUARIOS_CONFIG[user]["color"]})
     
     df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
-    
-    if df_fav.empty:
-        return go.Figure()
+    if df_fav.empty: return go.Figure()
 
     fig = go.Figure(go.Bar(
         x=df_fav["Pct"], y=df_fav["User"], orientation='h',
         marker=dict(color=df_fav["Cor"]),
-        text=df_fav.apply(lambda x: f"{x['Disciplina']} ({x['Pct']:.0f}%)", axis=1),
-        textposition='inside', insidetextanchor='middle', textfont=dict(color='white')
+        text=df_fav.apply(lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)", axis=1),
+        textposition='inside', insidetextanchor='middle', 
+        textfont=dict(color='white', size=13)
     ))
     fig.update_layout(
         margin=dict(l=0, r=10, t=0, b=0), height=300,
+        yaxis=dict(showticklabels=False, showgrid=False),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[0, 105]),
-        yaxis=dict(showgrid=False, tickfont=dict(size=13)),
         plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
     )
     return fig
@@ -282,54 +247,34 @@ def renderizar_favoritas(df, colunas_validas):
 df, worksheet = carregar_dados()
 
 if df.empty or worksheet is None:
-    st.error("Erro de conexão. Recarregue a página.")
+    st.error("Erro de conexão. Recarregue.")
     st.stop()
 
 colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 
-# -----------------------------------------------------------
-# 1. DASHBOARD (HOME)
-# -----------------------------------------------------------
+# 1. DASHBOARD
 if st.session_state['pagina_atual'] == 'dashboard':
-    
-    # Cabeçalho
     st.markdown("<h1 style='text-align: center; color: #2c3e50; margin-bottom: 5px;'>🩺 MedTracker Copeiros</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #7f8c8d; margin-bottom: 30px;'>Painel de Monitoramento de Estudos</p>", unsafe_allow_html=True)
     
     # KPIs
-    total_aulas = len(df) * len(colunas_validas)
     feitos_total = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
     media = feitos_total / len(colunas_validas) if colunas_validas else 0
-    
     k1, k2, k3 = st.columns(3)
-    k1.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas Assistidas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{feitos_total}</div></div>""", unsafe_allow_html=True)
-    k2.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média por Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(media)}</div></div>""", unsafe_allow_html=True)
-    k3.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total de Aulas</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>""", unsafe_allow_html=True)
+    k1.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{feitos_total}</div></div>""", unsafe_allow_html=True)
+    k2.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(media)}</div></div>""", unsafe_allow_html=True)
+    k3.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Aulas</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>""", unsafe_allow_html=True)
 
-    # SELEÇÃO DE PERFIL (FOTO É O BOTÃO)
+    # AVATARS (CORREÇÃO DE CLIQUE)
     st.markdown("### 👤 Quem é você?")
-    
     cols_avatar = st.columns(6)
     
-    # Truque CSS para os botões ficarem invisíveis sobre a foto
-    st.markdown("""
-    <style>
-    /* Faz o botão preencher o container e ficar invisível */
-    div[data-testid="column"] button {
-        height: 200px; width: 100%;
-        opacity: 0; z-index: 5;
-        margin-top: -200px; /* Puxa o botão pra cima da foto */
-        cursor: pointer;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     for i, user in enumerate(LISTA_USUARIOS):
         with cols_avatar[i]:
             cor = USUARIOS_CONFIG[user]['color']
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             
-            # HTML da Foto (Fundo visual)
+            # HTML Visual (Fica atrás)
             if img_b64:
                 st.markdown(f"""
                 <div class="avatar-wrapper">
@@ -345,76 +290,46 @@ if st.session_state['pagina_atual'] == 'dashboard':
                 </div>
                 """, unsafe_allow_html=True)
             
-            # Botão Invisível (Interação Real)
-            # Usamos um container vazio para dar altura se necessário, mas o margin-top resolve
-            st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True) 
+            # Botão Invisível (Fica na frente via CSS negativo)
             if st.button(f"Entrar {user}", key=f"btn_{user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
 
     st.markdown("---")
-
-    # GRÁFICOS
     c1, c2, c3 = st.columns(3)
-    
     with c1:
         st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
         st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-    
     with c2:
-        st.markdown('<div class="dashboard-card"><div class="card-title">🔥 Disciplinas Mais Populares (Top 8)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="dashboard-card"><div class="card-title">🔥 Disciplinas Populares</div>', unsafe_allow_html=True)
         st.plotly_chart(renderizar_top_disciplinas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        
     with c3:
-        st.markdown('<div class="dashboard-card"><div class="card-title">❤️ Disciplina Favorita (Maior %)</div>', unsafe_allow_html=True)
+        st.markdown('<div class="dashboard-card"><div class="card-title">❤️ Favorita (Maior %)</div>', unsafe_allow_html=True)
         st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------------------------------------
-# 2. PERFIL DO USUÁRIO
-# -----------------------------------------------------------
+# 2. PERFIL
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
     
-    # Header Personalizado
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
-        if st.button("⬅", help="Voltar ao Painel"): ir_para_dashboard()
-    
+        if st.button("⬅", help="Voltar"): ir_para_dashboard()
     with c_head:
-        # Layout Flex para Imagem + Nome
         img_html = f'<img src="{img_b64}" class="profile-header-img" style="border-color:{cor}">' if img_b64 else ""
-        st.markdown(f"""
-        <div style="display: flex; align-items: center;">
-            {img_html}
-            <h1 style="margin: 0; color: {cor};">Olá, {user}!</h1>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>""", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # Progresso
     col_u = df[user].apply(limpar_booleano)
     pct = col_u.sum() / len(df) if len(df) > 0 else 0
-    
-    st.markdown(f"""
-    <div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
-        <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div>
-        <div style="display: flex; justify-content: space-between; align-items: baseline;">
-            <div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div>
-            <div style="font-size: 16px; color: #555;"><strong>{col_u.sum()}</strong> de {len(df)} aulas</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col_u.sum()}</strong> de {len(df)} aulas</div></div></div>""", unsafe_allow_html=True)
     st.progress(pct)
 
-    # Grid de Disciplinas
     st.markdown("### 📚 Suas Disciplinas")
-    
     ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
     disc_existentes = df['Disciplina'].unique()
     lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
@@ -427,39 +342,28 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                
-                # Título colorido se tiver progresso
                 c_tit = cor if pct_d > 0 else "#444"
                 st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
-                
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
-                if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"):
-                    ir_para_disciplina(disc)
+                if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
 
-# -----------------------------------------------------------
-# 3. MODO FOCO (AULAS)
-# -----------------------------------------------------------
+# 3. MODO FOCO
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
-    
     c_btn, c_tit = st.columns([0.1, 0.9])
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
     with c_tit:
         st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
-    
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
-    
     df_d = df[df['Disciplina'] == disc]
     status = df_d[user].apply(limpar_booleano)
-    
     st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
-    
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
         c_k, c_t = st.columns([0.05, 0.95])
@@ -468,13 +372,8 @@ elif st.session_state['pagina_atual'] == 'focus':
             novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
         with c_t:
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
-            if chk:
-                st.markdown(f"<span style='color:{cor}; opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-            else:
-                st.markdown(txt)
-        
+            if chk: st.markdown(f"<span style='color:{cor}; opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+            else: st.markdown(txt)
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
-            st.toast("Salvo!", icon="💾")
-            time.sleep(0.5)
-            st.rerun()
+            st.toast("Salvo!", icon="💾"); time.sleep(0.5); st.rerun()
