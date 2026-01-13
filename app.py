@@ -6,18 +6,15 @@ import time
 import plotly.graph_objects as go
 import base64
 
-# --- Configuração da Página ---
-st.set_page_config(page_title="MedTracker - Quem está assistindo?", page_icon="🎬", layout="wide")
-
-# --- Lógica de Roteamento (Query Params) ---
-# Isso permite que o clique no HTML (imagem) funcione como um botão do Streamlit
-query_params = st.query_params
-if "user_login" in query_params:
-    user_clicado = query_params["user_login"]
-    st.session_state['usuario_ativo'] = user_clicado
-    st.session_state['pagina_atual'] = 'user_home'
-    # Limpa a URL para não logar novamente ao dar refresh
+# --- Lógica de Login via Clique na Imagem ---
+# Verifica se a URL tem ?user_login=Nome. Se tiver, loga o usuário.
+if "user_login" in st.query_params:
+    user_clicado = st.query_params["user_login"]
+    # Define o estado
+    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': user_clicado})
+    # Limpa a URL para ficar limpa
     st.query_params.clear()
+    # Recarrega a página já no perfil
     st.rerun()
 
 # --- Funções Auxiliares ---
@@ -28,112 +25,92 @@ def get_image_as_base64(path):
         encoded = base64.b64encode(data).decode()
         return f"data:image/png;base64,{encoded}"
     except:
-        # Retorna uma imagem transparente ou placeholder se falhar
-        return "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png"
+        return "https://upload.wikimedia.org/wikipedia/commons/c/ca/1x1.png" # Placeholder transparente
 
-# --- CSS NETFLIX STYLE ---
+# --- Configuração da Página ---
+st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
+
+# --- CSS GLOBAL (Mantendo o original + Estilo Netflix Específico) ---
 st.markdown("""
     <style>
-    /* Fundo Geral estilo Netflix */
-    .stApp {
-        background-color: #141414;
-        color: white;
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    }
+    .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
-    /* Esconder Header/Footer padrão do Streamlit para imersão */
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    .block-container {padding-top: 2rem;}
-
-    /* TÍTULO DA HOME */
-    .netflix-title {
-        text-align: center;
-        font-size: 3.5rem;
-        font-weight: 500;
-        margin-bottom: 50px;
-        color: white;
-    }
-
-    /* GRID DE PERFIS */
-    .profile-container {
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        flex-wrap: wrap;
-        gap: 2vw;
-        margin-top: 20px;
-    }
-
-    /* CARD DO PERFIL (Link) */
-    .profile-card {
-        text-decoration: none;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        width: 150px;
-        transition: transform 0.2s ease-in-out;
-    }
-    
-    .profile-card:hover {
-        transform: scale(1.05); /* Zoom ao passar o mouse */
-    }
-
-    /* IMAGEM DO PERFIL */
-    .profile-img-box {
-        width: 150px;
-        height: 150px;
-        border-radius: 4px; /* Quadrado arredondado estilo Netflix */
-        background-size: cover;
-        background-position: center;
-        border: 3px solid transparent; /* Borda invisível para não pular layout */
-        transition: border 0.2s;
-    }
-
-    /* EFEITO DE BORDA BRANCA AO PASSAR MOUSE */
-    .profile-card:hover .profile-img-box {
-        border: 3px solid white;
-    }
-
-    /* NOME DO PERFIL */
-    .profile-name {
-        margin-top: 15px;
-        color: #808080; /* Cinza Netflix */
-        font-size: 1.2rem;
-        text-align: center;
-        transition: color 0.2s;
-    }
-
-    .profile-card:hover .profile-name {
-        color: white; /* Texto fica branco no hover */
-    }
-
-    /* AJUSTES NOS CARDS INTERNOS (DASHBOARD) PARA DARK MODE */
+    /* CARDS ORIGINAIS */
     .dashboard-card {
-        background-color: #1f1f1f; 
-        border-radius: 8px; 
-        padding: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.3); 
-        border: 1px solid #333;
+        background-color: white; border-radius: 15px; padding: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
         margin-bottom: 20px;
     }
     .card-title {
-        color: #b3b3b3; 
-        font-size: 18px; font-weight: 700;
+        color: #555; font-size: 18px; font-weight: 700;
         text-transform: uppercase; letter-spacing: 0.5px;
-        margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px;
+        margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
     
-    /* CABEÇALHO PERFIL INTERNO */
+    /* REMOVE TEXTO DE LEGENDA DOS GRÁFICOS */
+    .js-plotly-plot .plotly .modebar { display: none !important; }
+    
+    /* HEADER PERFIL */
     .profile-header-img {
-        width: 60px; height: 60px; border-radius: 4px;
-        object-fit: cover; margin-right: 15px;
+        width: 80px; height: 80px; border-radius: 50%;
+        object-fit: cover; border: 3px solid white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
-    
-    /* TEXTOS GERAIS */
-    h1, h2, h3, h4, p, span, div { color: white; }
-    .stProgress > div > div > div > div { background-color: #e50914; } /* Barra vermelha Netflix */
-    
+
+    /* --- ESTILO ESPECÍFICO ÁREA NETFLIX --- */
+    .netflix-container {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 20px;
+        padding: 40px 0;
+        background-color: #141414; /* Fundo preto Netflix apenas nesta área */
+        border-radius: 10px;
+        margin-bottom: 30px;
+    }
+
+    .netflix-profile-link {
+        text-decoration: none !important;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100px; /* Largura fixa para alinhar */
+        transition: transform 0.3s ease;
+    }
+
+    /* Hover: Zoom no container todo */
+    .netflix-profile-link:hover {
+        transform: scale(1.1);
+    }
+
+    .netflix-img {
+        width: 100px;
+        height: 100px;
+        object-fit: cover;
+        border-radius: 4px; /* Borda levemente arredondada (quadrada) */
+        border: 2px solid transparent;
+        transition: border 0.3s ease;
+    }
+
+    /* Hover: Borda branca na imagem */
+    .netflix-profile-link:hover .netflix-img {
+        border: 2px solid white;
+    }
+
+    .netflix-name {
+        margin-top: 10px;
+        color: #808080;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        font-size: 14px;
+        text-align: center;
+        transition: color 0.3s ease;
+    }
+
+    /* Hover: Texto fica branco */
+    .netflix-profile-link:hover .netflix-name {
+        color: white;
+    }
+
     </style>
 """, unsafe_allow_html=True)
 
@@ -141,12 +118,12 @@ st.markdown("""
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 
 USUARIOS_CONFIG = {
-    "Ana Clara": {"color": "#e50914", "img": "ana_clara.png"}, # Vermelho Netflix padrão
-    "Arthur":    {"color": "#0071eb", "img": "arthur.png"},
-    "Gabriel":   {"color": "#f5c518", "img": "gabriel.png"},
-    "Lívian":    {"color": "#46d369", "img": "livian.png"},
-    "Newton":    {"color": "#b1060f", "img": "newton.png"},
-    "Rafa":      {"color": "#ffffff", "img": "rafa.png"}
+    "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
+    "Arthur":    {"color": "#263149", "img": "arthur.png"},
+    "Gabriel":   {"color": "#bf7000", "img": "gabriel.png"},
+    "Lívian":    {"color": "#0b4c00", "img": "livian.png"},
+    "Newton":    {"color": "#002322", "img": "newton.png"},
+    "Rafa":      {"color": "#c14121", "img": "rafa.png"}
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
@@ -196,6 +173,10 @@ def ir_para_dashboard():
     st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None})
     st.rerun()
 
+def ir_para_usuario(nome): 
+    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome})
+    st.rerun()
+
 def ir_para_disciplina(d): 
     st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d})
     st.rerun()
@@ -204,7 +185,7 @@ def voltar_para_usuario():
     st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None})
     st.rerun()
 
-# --- Gráficos (Adaptados para Dark Mode) ---
+# --- Gráficos ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -237,6 +218,82 @@ def renderizar_ranking(df, colunas_validas):
     )
     return fig
 
+def renderizar_top_disciplinas(df, colunas_validas):
+    df_t = df.copy()
+    df_t['Total'] = 0
+    for u in colunas_validas:
+        df_t['Total'] += df_t[u].apply(limpar_booleano).astype(int)
+    agrup = (
+        df_t.groupby('Disciplina')['Total']
+        .sum()
+        .reset_index()
+        .sort_values('Total', ascending=True)
+        .tail(8)
+    )
+    fig = go.Figure(go.Bar(
+        x=agrup['Total'],
+        y=agrup['Disciplina'],
+        orientation='h',
+        marker=dict(color=agrup['Total'], colorscale='Teal'),
+        text=agrup['Total'],
+        textposition='auto'
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=300,
+        xaxis=dict(showgrid=False, showticklabels=False),
+        yaxis=dict(showgrid=False, tickfont=dict(size=12)),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
+
+def renderizar_favoritas(df, colunas_validas):
+    data = []
+    for user in colunas_validas:
+        max_pct = 0
+        fav_disc = "—"
+        temp = df[df['Disciplina'].isin(df['Disciplina'].unique())].copy()
+        for disc in temp['Disciplina'].unique():
+            df_d = temp[temp['Disciplina'] == disc]
+            if len(df_d) > 0:
+                pct = df_d[user].apply(limpar_booleano).sum() / len(df_d)
+                if pct > max_pct:
+                    max_pct = pct
+                    fav_disc = disc
+        if max_pct > 0:
+            data.append({
+                "User": user,
+                "Disciplina": fav_disc,
+                "Pct": max_pct * 100,
+                "Cor": USUARIOS_CONFIG[user]["color"]
+            })
+    df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
+    if df_fav.empty:
+        return go.Figure()
+    fig = go.Figure(go.Bar(
+        x=df_fav["Pct"],
+        y=df_fav["User"],
+        orientation='h',
+        marker=dict(color=df_fav["Cor"]),
+        text=df_fav.apply(
+            lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)",
+            axis=1
+        ),
+        textposition='inside',
+        insidetextanchor='middle',
+        textfont=dict(color='white', size=13)
+    ))
+    fig.update_layout(
+        margin=dict(l=0, r=10, t=0, b=0),
+        height=300,
+        yaxis=dict(showticklabels=False, showgrid=False),
+        xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
+
 # --- APP ---
 df, worksheet = carregar_dados()
 if df.empty or worksheet is None:
@@ -246,60 +303,112 @@ if df.empty or worksheet is None:
 colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 
 # =========================================================
-# 1. TELA DE LOGIN (ESTILO NETFLIX)
+# 1. DASHBOARD
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
 
-    st.markdown('<div class="netflix-title">Quem está assistindo?</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align: center; color: #2c3e50;'>🩺 MedTracker Copeiros</h1>",
+        unsafe_allow_html=True
+    )
+
+    # KPIs (Mantidos como no original)
+    total = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
+    media = total / len(colunas_validas) if colunas_validas else 0
+
+    k1, k2, k3 = st.columns(3)
+    k1.markdown(
+        f"""<div class="dashboard-card" style="text-align:center;">
+        <div class="card-title">Aulas (Total)</div>
+        <div style="font-size: 36px; font-weight: 800; color: #3498db;">{total}</div>
+        </div>""",
+        unsafe_allow_html=True
+    )
+    k2.markdown(
+        f"""<div class="dashboard-card" style="text-align:center;">
+        <div class="card-title">Média/Copeiro</div>
+        <div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(media)}</div>
+        </div>""",
+        unsafe_allow_html=True
+    )
+    k3.markdown(
+        f"""<div class="dashboard-card" style="text-align:center;">
+        <div class="card-title">Total Aulas</div>
+        <div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div>
+        </div>""",
+        unsafe_allow_html=True
+    )
+
+    # ---------------------------------------------------------------------
+    # ÁREA ALTERADA: SELEÇÃO DE PERFIL ESTILO NETFLIX
+    # ---------------------------------------------------------------------
+    st.markdown("<h3 style='text-align:center; margin-top:20px;'>Quem está assistindo?</h3>", unsafe_allow_html=True)
     
-    # Montar o HTML Grid
-    html_content = '<div class="profile-container">'
+    # Montamos o HTML com todas as imagens e links
+    html_profiles = '<div class="netflix-container">'
     
     for user in LISTA_USUARIOS:
-        # Pega a imagem em base64
-        img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+        # Tenta pegar imagem, se não tiver usa placeholder
+        img_src = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
         
-        # Cria um link <a> que recarrega a página com parâmetro ?user_login=Nome
-        # A lógica no topo do script captura isso.
-        html_content += f"""
-        <a href="?user_login={user}" target="_self" class="profile-card">
-            <div class="profile-img-box" style="background-image: url('{img_b64}');"></div>
-            <div class="profile-name">{user}</div>
+        # Link que recarrega a página com parâmetro ?user_login=NOME
+        html_profiles += f"""
+        <a href="?user_login={user}" target="_self" class="netflix-profile-link">
+            <img src="{img_src}" class="netflix-img">
+            <div class="netflix-name">{user}</div>
         </a>
         """
+    html_profiles += "</div>"
     
-    html_content += '</div>'
-    
-    # Renderiza o HTML interativo
-    st.markdown(html_content, unsafe_allow_html=True)
+    # Renderiza
+    st.markdown(html_profiles, unsafe_allow_html=True)
+    # ---------------------------------------------------------------------
 
-    # Botão discreto para gerenciar perfis (Visual apenas)
-    st.markdown("""
-        <div style="text-align: center; margin-top: 50px;">
-            <a href="#" style="border: 1px solid grey; color: grey; padding: 5px 20px; text-decoration: none; text-transform: uppercase; letter-spacing: 2px; font-size: 0.8rem;">
-                Gerenciar Perfis
-            </a>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("---")
+
+    # Gráficos (Mantidos como no original)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown(
+            '<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with c2:
+        st.markdown(
+            '<div class="dashboard-card"><div class="card-title">🔥 Disciplinas Populares</div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(renderizar_top_disciplinas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with c3:
+        st.markdown(
+            '<div class="dashboard-card"><div class="card-title">❤️ Favorita (Maior %)</div>',
+            unsafe_allow_html=True
+        )
+        st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (DASHBOARD DO USUÁRIO)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
 
-    # Header
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
-        if st.button("⬅", help="Voltar para seleção de perfis"):
+        if st.button("⬅", help="Voltar"):
             ir_para_dashboard()
     with c_head:
-        img_html = f'<img src="{img}" class="profile-header-img" style="border: 2px solid {cor}">' if img else ""
+        img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
         st.markdown(
             f"""<div style="display: flex; align-items: center;">
-            {img_html}<h1 style="margin: 0; color: white;">Olá, {user}!</h1>
+            {img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1>
             </div>""",
             unsafe_allow_html=True
         )
@@ -309,54 +418,58 @@ elif st.session_state['pagina_atual'] == 'user_home':
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
 
-    # Card Principal (Estatísticas)
     st.markdown(
-        f"""<div class="dashboard-card" style="border-left: 5px solid {cor};">
-        <div class="card-title">Progresso Total</div>
+        f"""<div style="background: white; border-left: 8px solid {cor};
+        padding: 25px; border-radius: 12px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
+        <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">
+        Progresso Total</div>
         <div style="display: flex; justify-content: space-between; align-items: baseline;">
         <div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div>
-        <div style="font-size: 16px; color: #aaa;">
+        <div style="font-size: 16px; color: #555;">
         <strong>{col.sum()}</strong> de {len(df)} aulas</div>
         </div></div>""",
         unsafe_allow_html=True
     )
     st.progress(pct)
 
-    st.markdown("### 📚 Minha Lista (Disciplinas)")
+    st.markdown("### 📚 Suas Disciplinas")
 
-    cols = st.columns(3) # 3 colunas fica melhor no widescreen
-    
-    disciplinas = sorted(df['Disciplina'].unique())
-    
-    for i, disc in enumerate(disciplinas):
-        with cols[i % 3]:
-            # Container estilizado nativo do Streamlit
+    ordem = [
+        "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia",
+        "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia",
+        "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia",
+        "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva",
+        "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"
+    ]
+
+    disc_existentes = df['Disciplina'].unique()
+    lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
+
+    cols = st.columns(2)
+    for i, disc in enumerate(lista):
+        with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                
-                # Título com cor se tiver progresso
-                c_tit = cor if pct_d > 0 else "#666"
-                
-                st.markdown(f"<div style='color:{c_tit}; font-weight:bold; font-size:18px; margin-bottom:5px;'>{disc}</div>", unsafe_allow_html=True)
+                c_tit = cor if pct_d > 0 else "#444"
+
+                st.markdown(
+                    f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>",
+                    unsafe_allow_html=True
+                )
                 st.progress(pct_d)
-                
-                c1, c2 = st.columns([1, 1])
-                c1.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
-                
-                if c2.button("Assistir", key=f"btn_{disc}"):
+
+                c_txt, c_btn = st.columns([0.6, 0.4])
+                c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
+
+                if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"):
                     ir_para_disciplina(disc)
 
-    # Ranking Global (Opcional mostrar aqui ou não)
-    st.markdown("---")
-    st.markdown("### 🏆 Ranking da Galera")
-    st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
-
-
 # =========================================================
-# 3. MODO FOCO (Checklist)
+# 3. MODO FOCO
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
@@ -365,7 +478,7 @@ elif st.session_state['pagina_atual'] == 'focus':
 
     c_btn, c_tit = st.columns([0.1, 0.9])
     with c_btn:
-        if st.button("⬅ Voltar"):
+        if st.button("⬅"):
             voltar_para_usuario()
     with c_tit:
         st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
@@ -376,32 +489,32 @@ elif st.session_state['pagina_atual'] == 'focus':
         col_idx = 0
 
     df_d = df[df['Disciplina'] == disc]
-    
-    # Tabela visualmente mais limpa
+    status = df_d[user].apply(limpar_booleano)
+    st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
+
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
-        
-        # Container para cada linha
-        with st.container():
-            c_k, c_t = st.columns([0.05, 0.95])
-            with c_k:
-                novo = st.checkbox(
-                    "x",
-                    value=chk,
-                    key=f"k_{idx}_{user}",
-                    label_visibility="collapsed"
+        c_k, c_t = st.columns([0.05, 0.95])
+        with c_k:
+            novo = st.checkbox(
+                "x",
+                value=chk,
+                key=f"k_{idx}_{user}",
+                label_visibility="collapsed"
+            )
+        with c_t:
+            txt = f"**Semana {row['Semana']}**: {row['Aula']}"
+            if chk:
+                st.markdown(
+                    f"<span style='color:{cor}; opacity:0.6; text-decoration:line-through'>"
+                    f"✅ {txt}</span>",
+                    unsafe_allow_html=True
                 )
-            with c_t:
-                txt = f"**Semana {row['Semana']}**: {row['Aula']}"
-                if chk:
-                    # Estilo riscado e escuro para completado
-                    st.markdown(f"<div style='color:#555; text-decoration:line-through'>✅ {txt}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='color:white;'>{txt}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(txt)
 
-            if novo != chk:
-                atualizar_status(worksheet, idx, col_idx, novo)
-                st.toast(f"Status atualizado para {user}!", icon="💾")
-                time.sleep(0.5)
-                st.rerun()
-        st.markdown("<hr style='margin: 5px 0; border-color: #333;'>", unsafe_allow_html=True)
+        if novo != chk:
+            atualizar_status(worksheet, idx, col_idx, novo)
+            st.toast("Salvo!")
+            time.sleep(0.5)
+            st.rerun()
