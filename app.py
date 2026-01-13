@@ -1,121 +1,146 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import gspread
+from google.oauth2.service_account import Credentials
 
 # --- Configuração da Página ---
-st.set_page_config(page_title="MedTracker", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="MedTracker Estudo", page_icon="🩺", layout="wide")
 
-# --- Conexão e Funções de Dados ---
-def load_data():
-    """Carrega os dados diretamente do Google Sheets sem cache (ttl=0)"""
-    # Cria a conexão
-    conn = st.connection("gsheets", type=GSheetsConnection)
+# --- Conexão com Google Sheets ---
+# Usamos @st.cache_resource para não reconectar a cada clique, mas a leitura dos dados será atualizada.
+@st.cache_resource
+def conectar_google_sheets():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
     
-    # Lê a planilha. O ttl=0 garante que os dados estejam sempre frescos
-    try:
-        df = conn.read(worksheet="Página1", usecols=[0,1,2,3,4,5], ttl=0)
-        
-        # Garante que as colunas dos usuários sejam booleanas (True/False)
-        # Isso evita erros se a planilha tiver 'FALSE' como texto
-        users = ["Ana Clara", "Gabriel", "Newton"]
-        for user in users:
-            if user in df.columns:
-                df[user] = df[user].fillna(False).astype(bool)
-        return df
-    except Exception as e:
-        st.error(f"Erro ao conectar com a planilha: {e}")
-        return pd.DataFrame()
+    # Carrega as credenciais dos segredos do Streamlit
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scopes
+    )
+    
+    gc = gspread.authorize(credentials)
+    return gc
 
-def save_data(df):
-    """Salva o dataframe atualizado de volta no Google Sheets"""
-    conn = st.connection("gsheets", type=GSheetsConnection)
+# Função para carregar dados
+def carregar_dados(sheet_url_or_name):
+    gc = conectar_google_sheets()
     try:
-        conn.update(worksheet="Página1", data=df)
-        # Recarrega a página para atualizar as barras de progresso visualmente
-        st.rerun() 
+        sh = gc.open(sheet_url_or_name)
+        worksheet = sh.worksheet("Dados") # Nome da aba na planilha
+        dados = worksheet.get_all_records()
+        df = pd.DataFrame(dados)
+        return df, worksheet
+    except Exception as e:
+        st.error(f"Erro ao conectar na planilha: {e}")
+        return pd.DataFrame(), None
+
+# Função de callback para atualizar a planilha imediatamente
+def atualizar_status(worksheet, row_index, col_name, novo_valor):
+    try:
+        # Encontra o índice da coluna (gspread usa base 1)
+        col_index = worksheet.find(col_name).col
+        # A linha é row_index + 2 (1 pelo cabeçalho + 1 porque gspread é base 1 e dataframe é base 0)
+        gspread_row = row_index + 2
+        
+        # Atualiza a célula no Google Sheets
+        worksheet.update_cell(gspread_row, col_index, novo_valor)
+        st.toast(f"Salvo: Aula marcada como {novo_valor}!", icon="✅")
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
 
 # --- Interface Principal ---
-def main():
-    st.title("🩺 MedTracker - Acompanhamento de Estudos")
-    st.markdown("---")
 
-    # Carregar dados
-    # Não usamos session_state complexo aqui para forçar a leitura fresca sempre que interagir
-    df = load_data()
+# 1. Título e Seleção de Usuário
+st.title("🩺 Acompanhamento de Estudos - Residência")
 
-    if df.empty:
-        st.warning("Não foi possível carregar a planilha. Verifique a conexão.")
-        return
+# Nome da sua planilha (pode ser o nome exato ou a URL completa)
+NOME_PLANILHA = "MedTracker Planilha" # <--- ALTERE AQUI PARA O NOME DA SUA PLANILHA
 
-    # 1. Escolha do Usuário
-    users = ["Ana Clara", "Gabriel", "Newton"]
-    selected_user = st.sidebar.selectbox("Quem é você?", users)
+df, worksheet = carregar_dados(NOME_PLANILHA)
+
+if not df.empty:
+    usuarios = ["Ana Clara", "Gabriel", "Newton"]
     
-    st.sidebar.markdown(f"## Olá, **{selected_user}**!")
-    st.sidebar.info("Marque as aulas conforme for assistindo. O progresso é salvo na nuvem automaticamente. ☁️")
+    st.sidebar.header("Perfil")
+    usuario_selecionado = st.sidebar.radio("Selecione quem está estudando:", usuarios)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.info(f"Bem-vindo(a), **{usuario_selecionado}**! Marque as aulas conforme for assistindo. O progresso é salvo automaticamente.")
 
-    # 2. Ordem das Disciplinas
+    # 2. Lista de Disciplinas (Ordem Definida)
     ordem_disciplinas = [
-        "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", 
-        "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", 
-        "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", 
-        "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", 
-        "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"
+        "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", 
+        "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", 
+        "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", 
+        "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"
     ]
-
-    # Organiza disciplinas existentes e extras
-    disciplinas_existentes = [d for d in ordem_disciplinas if d in df['Disciplina'].unique()]
-    outras = [d for d in df['Disciplina'].unique() if d not in ordem_disciplinas]
-    disciplinas_finais = disciplinas_existentes + outras
-
-    # --- Área de Progresso Geral ---
-    total_aulas = len(df)
-    aulas_assistidas = df[selected_user].sum()
-    progresso_geral = aulas_assistidas / total_aulas if total_aulas > 0 else 0
     
-    st.metric(label="Progresso Total", value=f"{progresso_geral:.1%}", delta=f"{aulas_assistidas}/{total_aulas} Aulas")
-    st.progress(progresso_geral)
+    # Filtra apenas disciplinas que existem na planilha para evitar erros
+    disciplinas_existentes = df['Disciplina'].unique()
+    disciplinas_para_mostrar = [d for d in ordem_disciplinas if d in disciplinas_existentes]
     
-    st.markdown("---")
+    # Adiciona disciplinas que estão na planilha mas não na lista fixa (caso haja extras)
+    extras = [d for d in disciplinas_existentes if d not in ordem_disciplinas]
+    disciplinas_para_mostrar.extend(extras)
 
-    # 3. Exibição por Disciplina
-    # Criamos um container para as disciplinas
-    for disciplina in disciplinas_finais:
-        # Filtrar o dataframe para esta disciplina
-        df_disc_index = df[df['Disciplina'] == disciplina].index
-        df_disc = df.loc[df_disc_index]
+    # 3. Exibição das Disciplinas e Aulas
+    for disciplina in disciplinas_para_mostrar:
+        # Filtra o dataframe pela disciplina atual
+        df_disc = df[df['Disciplina'] == disciplina]
         
-        # Calcular progresso da disciplina
-        total_disc = len(df_disc)
-        completed_disc = df_disc[selected_user].sum()
-        prog_disc_val = completed_disc / total_disc if total_disc > 0 else 0
+        # Tratamento de erro caso a coluna do usuário não seja booleana pura (ex: string "TRUE")
+        # Forçamos converter para booleano para cálculo
+        status_usuario = df_disc[usuario_selecionado].astype(str).str.upper().replace({'TRUE': True, 'FALSE': False})
         
-        icon = "✅" if prog_disc_val == 1.0 else "📚"
+        # Cálculo do Progresso
+        total_aulas = len(df_disc)
+        aulas_assistidas = status_usuario.sum() # Soma os Trues
+        progresso = aulas_assistidas / total_aulas if total_aulas > 0 else 0
         
-        with st.expander(f"{icon} {disciplina} ({completed_disc}/{total_disc})"):
-            st.progress(prog_disc_val)
-            
-            # Configuração das colunas para edição
-            cols_to_show = ['Semana', 'Aula', selected_user]
-            
-            # Tabela Editável
-            edited_df_disc = st.data_editor(
-                df_disc[cols_to_show],
-                column_config={
-                    selected_user: st.column_config.CheckboxColumn(
-                        "Assistida?",
-                        help="Marque para salvar no Google Sheets",
-                        default=False,
-                    ),
-                    "Semana": st.column_config.NumberColumn(format="%d"),
-                },
-                disabled=["Semana", "Aula"], 
-                hide_index=True,
-                key=f"editor_{disciplina}_{selected_user}"
-            )
+        # Define a cor do progresso
+        cor_progresso = "green" if progresso == 1.0 else "blue"
+        texto_progresso = f"{int(progresso * 100)}% Concluído ({aulas_assistidas}/{total_aulas})"
 
-            # Lógica de Salvamento
-            # Comparamos se houve mudança entre o original e o editado
-            # Precisamos comparar
+        # Cria o Expander
+        with st.expander(f"**{disciplina}** - {texto_progresso}"):
+            st.progress(progresso)
+            
+            # Cria colunas para organizar melhor a lista
+            # Itera sobre as linhas dessa disciplina
+            for idx, row in df_disc.iterrows():
+                # Checkbox
+                # A chave (key) deve ser única. Usamos o índice original do dataframe.
+                is_checked = row[usuario_selecionado]
+                
+                # Normalização do valor booleano vindo da planilha
+                if isinstance(is_checked, str):
+                    is_checked = True if is_checked.upper() == 'TRUE' else False
+                
+                col1, col2 = st.columns([0.05, 0.95])
+                
+                with col1:
+                    # O Checkbox dispara a atualização assim que clicado
+                    novo_valor = st.checkbox(
+                        label="",
+                        value=bool(is_checked),
+                        key=f"chk_{idx}_{usuario_selecionado}",
+                    )
+
+                with col2:
+                    st.write(f"**Semana {row['Semana']}**: {row['Aula']}")
+
+                # Lógica de Atualização (Detecta mudança)
+                if novo_valor != bool(is_checked):
+                    # Se mudou, atualiza no Google Sheets
+                    # Passamos 'TRUE' ou 'FALSE' string para garantir compatibilidade com Sheets,
+                    # ou boolean python dependendo de como você prefere na planilha. 
+                    # Sheets entende boolean Python.
+                    atualizar_status(worksheet, idx, usuario_selecionado, novo_valor)
+                    # Força recarregar a página para atualizar visualmente os gráficos
+                    st.rerun()
+
+else:
+    st.warning("A planilha parece estar vazia ou não foi possível carregá-la.")
