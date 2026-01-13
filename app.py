@@ -72,7 +72,6 @@ def limpar_booleano(valor):
     return False
 
 # --- Inicialização de Estado (Session State) ---
-# Isso permite lembrar qual disciplina está "Aberta"
 if 'disciplina_ativa' not in st.session_state:
     st.session_state['disciplina_ativa'] = None
 
@@ -134,7 +133,17 @@ if not df.empty and worksheet is not None:
             c_check, c_text = st.columns([0.05, 0.95])
             with c_check:
                 key = f"chk_focus_{idx}_{usuario_selecionado}"
-                novo = st.checkbox("", value=checked, key=key)
+                
+                # --- CORREÇÃO AQUI ---
+                # Adicionamos um rótulo ("Marcar") e usamos label_visibility="collapsed"
+                # Isso satisfaz o sistema e esconde o texto para o usuário
+                novo = st.checkbox(
+                    "Marcar", 
+                    value=checked, 
+                    key=key, 
+                    label_visibility="collapsed"
+                )
+                
             with c_text:
                 txt = f"**Semana {row['Semana']}**: {row['Aula']}"
                 if checked:
@@ -144,7 +153,7 @@ if not df.empty and worksheet is not None:
             
             if novo != checked:
                 atualizar_status(worksheet, idx, usuario_selecionado, novo)
-                time.sleep(0.5) # Pequeno delay para garantir sincronia visual
+                time.sleep(0.5)
                 st.rerun()
 
     # 2. Modo GRADE (Cards 2 por linha)
@@ -190,7 +199,6 @@ if not df.empty and worksheet is not None:
                     c1, c2 = st.columns([0.7, 0.3])
                     c1.caption(f"{int(pct_d*100)}% concluído")
                     
-                    # O Botão que ativa o Modo Foco
                     if c2.button("Abrir ➝", key=f"btn_{disciplina}"):
                         st.session_state['disciplina_ativa'] = disciplina
                         st.rerun()
