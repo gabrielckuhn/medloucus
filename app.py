@@ -93,17 +93,28 @@ if 'disciplina_ativa' not in st.session_state:
 df, worksheet = carregar_dados()
 
 if not df.empty and worksheet is not None:
-    usuarios = ["Ana Clara", "Gabriel", "Newton"]
+    # --- LISTA DE USUÁRIOS ATUALIZADA ---
+    usuarios = ["Ana Clara", "Arthur", "Gabriel", "Lívian", "Newton", "Rafa"]
     
     # Sidebar
     st.sidebar.title("🩺 MedTracker")
-    usuario_selecionado = st.sidebar.selectbox("Perfil", usuarios)
+    
+    # Verifica se os novos usuários estão na planilha antes de mostrar o seletor
+    # Se algum nome não estiver no cabeçalho da planilha, o código avisa para evitar crash
+    colunas_presentes = [u for u in usuarios if u in df.columns]
+    
+    if len(colunas_presentes) < len(usuarios):
+        st.sidebar.error("Atenção: Alguns nomes do código não foram encontrados na planilha. Verifique o cabeçalho do Google Sheets.")
+    
+    usuario_selecionado = st.sidebar.selectbox("Perfil", colunas_presentes if colunas_presentes else usuarios)
     
     # Otimização: Índice da coluna do usuário
     try:
-        coluna_usuario_idx = df.columns.get_loc(usuario_selecionado) + 1
+        if usuario_selecionado in df.columns:
+            coluna_usuario_idx = df.columns.get_loc(usuario_selecionado) + 1
+        else:
+            coluna_usuario_idx = 0
     except:
-        st.error("Usuário não encontrado na planilha.")
         coluna_usuario_idx = 0
 
     st.sidebar.markdown("---")
@@ -111,7 +122,9 @@ if not df.empty and worksheet is not None:
     
     ranking_data = []
     total_global = len(df)
-    for user in usuarios:
+    
+    # Calcula ranking apenas para colunas que existem
+    for user in colunas_presentes:
         pct = df[user].apply(limpar_booleano).sum() / total_global if total_global > 0 else 0
         ranking_data.append({"nome": user, "pct": pct})
     ranking_data.sort(key=lambda x: (-x['pct'], x['nome']))
@@ -142,7 +155,7 @@ if not df.empty and worksheet is not None:
         pct = feitos / total if total > 0 else 0
         
         st.progress(pct)
-        # Texto detalhado também no modo foco
+        # Texto detalhado
         st.caption(f"**Status:** {int(pct*100)}% concluído — {feitos} de {total} aulas assistidas")
         st.markdown("---")
         
@@ -203,7 +216,6 @@ if not df.empty and worksheet is not None:
                     # Layout Coluna: Texto Informativo | Botão
                     c1, c2 = st.columns([0.65, 0.35])
                     
-                    # --- AQUI ESTÁ A MUDANÇA SOLICITADA ---
                     c1.caption(f"**{int(pct_d*100)}%** — {feitos_d} de {total_d} aulas")
                     
                     if c2.button("Abrir ➝", key=f"btn_{disciplina}"):
