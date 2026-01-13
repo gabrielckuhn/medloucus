@@ -6,9 +6,6 @@ import time
 import plotly.graph_objects as go
 import base64
 
-# --- Configuração da Página (Deve ser o primeiro comando) ---
-st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
-
 # --- Funções Auxiliares ---
 def get_image_as_base64(path):
     try:
@@ -19,12 +16,15 @@ def get_image_as_base64(path):
     except:
         return None
 
-# --- CSS GLOBAL ---
+# --- Configuração da Página ---
+st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
+
+# --- CSS ESTRUTURAL E VISUAL ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
-    /* CARDS KPI */
+    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -36,21 +36,14 @@ st.markdown("""
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
     
-    /* REMOVE TEXTO DE LEGENDA DOS GRÁFICOS */
+    /* GRÁFICOS */
     .js-plotly-plot .plotly .modebar { display: none !important; }
     
-    /* HEADER PERFIL NA PAGINA INTERNA */
+    /* HEADER PERFIL */
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
-    }
-
-    /* Centralizar botões nas colunas */
-    div[data-testid="column"] .stButton {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -87,7 +80,6 @@ def carregar_dados():
             except: worksheet = sh.get_worksheet(0)
             return pd.DataFrame(worksheet.get_all_records()), worksheet
         except: time.sleep(1.5)
-    return pd.DataFrame(), None
             
 def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
     try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
@@ -163,6 +155,56 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     
+    # CSS Específico para o Efeito de Hover e Botão Invisível APENAS nesta página
+    st.markdown("""
+    <style>
+    /* Container que envolve a foto e o botão */
+    .avatar-cell {
+        position: relative;
+        text-align: center;
+        margin-bottom: 20px;
+        transition: transform 0.3s ease; /* Animação suave */
+    }
+    
+    /* A Animação de Subir */
+    .avatar-cell:hover {
+        transform: translateY(-15px) scale(1.05);
+    }
+
+    /* Imagem */
+    .avatar-img {
+        width: 150px; height: 150px;
+        border-radius: 50%; object-fit: cover;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    
+    /* Texto do Nome */
+    .avatar-name {
+        margin-top: 10px;
+        font-weight: 800; font-size: 18px; color: #555; /* Cor Original Cinza */
+        transition: all 0.3s ease;
+    }
+    
+    /* MUDANÇA DE COR NO HOVER (BRANCO COM CONTORNO/SOMBRA) */
+    .avatar-cell:hover .avatar-name {
+        color: white !important;
+        /* Cria um contorno com a sombra para o branco aparecer no fundo branco */
+        text-shadow: 0px 0px 8px var(--user-color), 0px 0px 8px var(--user-color); 
+    }
+
+    /* O BOTÃO INVISÍVEL QUE COBRE TUDO */
+    /* Isso garante que onde clicar na célula, ativa o botão */
+    div[data-testid="column"] button {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 200px; /* Altura suficiente para cobrir foto + nome */
+        opacity: 0 !important; /* Totalmente invisível */
+        z-index: 10; /* Fica por cima de tudo */
+        cursor: pointer;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     st.markdown("<h1 style='text-align: center; color: #2c3e50;'>🩺 MedTracker Copeiros</h1>", unsafe_allow_html=True)
     
     # KPIs
@@ -173,71 +215,42 @@ if st.session_state['pagina_atual'] == 'dashboard':
     k2.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(media)}</div></div>""", unsafe_allow_html=True)
     k3.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Aulas</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>""", unsafe_allow_html=True)
 
-    st.markdown("### 👤 Selecione seu Perfil")
+    # SELEÇÃO DE PERFIL
+    st.markdown("### 👤 Quem é você?")
     
-    # --- ÁREA DE AVATARES CLICÁVEIS ---
+    # Criamos colunas. O Streamlit coloca um botão dentro de cada coluna.
+    # O CSS acima (div[data-testid="column"] button) vai esticar esse botão
+    # para cobrir o conteúdo HTML que colocamos antes dele.
+    
     cols = st.columns(6)
-    
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             cor = USUARIOS_CONFIG[user]['color']
-            img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+            img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             
-            # Configurações do CSS baseadas na existência da imagem
-            bg_image_style = f"url('{img_b64}')" if img_b64 else "none"
-            bg_color_fallback = "#f0f2f6" if not img_b64 else "transparent"
-            texto_botao = " " if img_b64 else user[0] # Mostra inicial se não tiver imagem
-
-            # CSS ESPECÍFICO INJETADO PARA ESTE BOTÃO
-            css_btn = f"""
-            <style>
-                /* Alvo: botão dentro da coluna específica */
-                div[data-testid="column"]:nth-of-type({i+1}) .stButton button {{
-                    background-image: {bg_image_style};
-                    background-size: cover;
-                    background-position: center;
-                    background-color: {bg_color_fallback};
-                    
-                    width: 130px;
-                    height: 130px;
-                    border-radius: 50%;
-                    border: 4px solid {cor};
-                    
-                    color: {cor};
-                    font-size: 40px;
-                    font-weight: 700;
-                    
-                    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
-                    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-                }}
-                
-                /* Efeito Hover */
-                div[data-testid="column"]:nth-of-type({i+1}) .stButton button:hover {{
-                    transform: translateY(-8px) scale(1.05);
-                    box-shadow: 0 10px 20px {cor}60;
-                    border-color: {cor};
-                    color: {cor};
-                }}
-                
-                /* Estado Ativo/Foco */
-                div[data-testid="column"]:nth-of-type({i+1}) .stButton button:active,
-                div[data-testid="column"]:nth-of-type({i+1}) .stButton button:focus:not(:active) {{
-                    background-color: {bg_color_fallback};
-                    border-color: {cor};
-                    color: {cor};
-                    box-shadow: none;
-                }}
-            </style>
+            # Definimos uma variável CSS local para a cor do usuário (usada no text-shadow)
+            style_var = f"--user-color: {cor};"
+            
+            # HTML (Visual)
+            html_content = f"""
+            <div class="avatar-cell" style="{style_var}">
+                <img src="{img}" class="avatar-img" style="border: 5px solid {cor};">
+                <div class="avatar-name">{user}</div>
+            </div>
+            """ if img else f"""
+            <div class="avatar-cell" style="{style_var}">
+                <div class="avatar-img" style="border: 5px solid {cor}; background:#eee; display:flex; align-items:center; justify-content:center; font-size:40px;">{user[0]}</div>
+                <div class="avatar-name">{user}</div>
+            </div>
             """
-            st.markdown(css_btn, unsafe_allow_html=True)
             
-            # O BOTÃO EM SI (Age como a imagem)
-            if st.button(texto_botao, key=f"btn_avatar_{user}", help=f"Entrar como {user}"):
+            st.markdown(html_content, unsafe_allow_html=True)
+            
+            # Botão Invisível (Funcional)
+            # O texto do label não importa, pois opacity: 0 esconde.
+            if st.button(f"Entrar {user}", key=f"btn_{user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
-            
-            # Nome abaixo do avatar
-            st.markdown(f"<div style='text-align:center; font-weight:600; color:#555; margin-top:-5px;'>{user}</div>", unsafe_allow_html=True)
 
     st.markdown("---")
     
