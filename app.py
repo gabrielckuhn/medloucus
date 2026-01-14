@@ -5,7 +5,6 @@ from google.oauth2.service_account import Credentials
 import time
 import plotly.graph_objects as go
 import base64
-from datetime import datetime
 
 # --- Funções Auxiliares ---
 def get_image_as_base64(path):
@@ -20,7 +19,7 @@ def get_image_as_base64(path):
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
-# --- LÓGICA DE CAPTURA DE CLIQUE ---
+# --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
 params = st.query_params
 if "user_login" in params:
     selected_user = params["user_login"]
@@ -28,16 +27,32 @@ if "user_login" in params:
     st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
     st.rerun()
 
-# --- CSS ESTRUTURAL (Mantido) ---
+# --- CSS ESTRUTURAL ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
-    .main-wrapper { margin-top: 30px; }
-    .main-title {
-        text-align: center; color: white; font-size: 3rem; font-weight: 800;
-        transition: all 0.4s ease; cursor: default; margin-bottom: 20px;
+    
+    /* MARGEM NO TOPO DA PÁGINA PRINCIPAL */
+    .main-wrapper {
+        margin-top: 30px;
     }
-    .main-title:hover { transform: scale(1.05); text-shadow: 0 0 20px rgba(255, 255, 255, 0.6); }
+
+    /* TÍTULO PRINCIPAL COM HOVER */
+    .main-title {
+        text-align: center; 
+        color: white; 
+        font-size: 3rem; 
+        font-weight: 800;
+        transition: all 0.4s ease;
+        cursor: default;
+        margin-bottom: 20px;
+    }
+    .main-title:hover {
+        transform: scale(1.05);
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+    }
+
+    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -48,16 +63,50 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
-    .section-subtitle { text-align:center; color: #555; margin-top: 5px; margin-bottom: 30px; }
-    .footer-signature { position: fixed; bottom: 10px; right: 20px; color: rgba(255, 255, 255, 0.4); font-size: 0.8rem; z-index: 100; font-family: sans-serif; }
-    .profile-container-wrapper { margin-top: 50px; }
-    .profile-header-img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px; }
+
+    /* TEXTO "ESCOLHA SEU PERFIL" */
+    .section-subtitle {
+        text-align:center; 
+        color: #555; 
+        margin-top: 5px; 
+        margin-bottom: 30px;
+    }
+
+    /* RODAPÉ (COPYRIGHT) NO CANTO INFERIOR DIREITO */
+    .footer-signature {
+        position: fixed;
+        bottom: 10px;
+        right: 20px;
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 0.8rem;
+        z-index: 100;
+        font-family: sans-serif;
+    }
+
+    /* MARGEM SUPERIOR PÁGINA PERFIL */
+    .profile-container-wrapper {
+        margin-top: 50px;
+    }
+
+    .profile-header-img {
+        width: 80px; height: 80px; border-radius: 50%;
+        object-fit: cover; border: 3px solid white;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
+    }
+
+    /* ESTILO NETFLIX */
     .netflix-link { text-decoration: none !important; display: block; }
     .netflix-card { text-align: center; transition: transform 0.3s ease; cursor: pointer; }
     .netflix-card:hover { transform: scale(1.08); }
-    .netflix-img { width: 100%; aspect-ratio: 1/1; border-radius: 4px; object-fit: cover; border: 3px solid transparent; transition: border 0.3s ease; }
+    .netflix-img {
+        width: 100%; aspect-ratio: 1/1; border-radius: 4px;
+        object-fit: cover; border: 3px solid transparent; transition: border 0.3s ease;
+    }
     .netflix-card:hover .netflix-img { border: 3px solid white; }
-    .netflix-name { margin-top: 10px; color: #808080; font-size: 1.2rem; transition: color 0.3s ease; text-decoration: none !important; }
+    .netflix-name {
+        margin-top: 10px; color: #808080; font-size: 1.2rem;
+        transition: color 0.3s ease; text-decoration: none !important;
+    }
     .netflix-card:hover .netflix-name { color: white; }
     </style>
 """, unsafe_allow_html=True)
@@ -74,6 +123,7 @@ USUARIOS_CONFIG = {
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
+# --- Conexão e Funções ---
 @st.cache_resource
 def conectar_google_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -88,7 +138,8 @@ def carregar_dados():
     for tentativa in range(3):
         try:
             sh = gc.open_by_url(PLANILHA_URL)
-            worksheet = sh.worksheet("Dados")
+            try: worksheet = sh.worksheet("Dados")
+            except: worksheet = sh.get_worksheet(0)
             return pd.DataFrame(worksheet.get_all_records()), worksheet
         except: time.sleep(1.5)
 
@@ -98,17 +149,7 @@ def limpar_booleano(valor):
     return False
 
 def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
-    try:
-        # 1. Atualiza o checkbox do usuário
-        worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
-        
-        # 2. Atualiza o carimbo de data/hora (Assume que a coluna 'Ultima_Alteracao' existe)
-        try:
-            headers = worksheet.row_values(1)
-            if "Ultima_Alteracao" in headers:
-                col_ts = headers.index("Ultima_Alteracao") + 1
-                worksheet.update_cell(row_index + 2, col_ts, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        except: pass # Se a coluna não existir, ele ignora sem quebrar o app
+    try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
     except: st.error("Erro ao salvar.")
 
 # --- Navegação ---
@@ -120,7 +161,7 @@ def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home',
 def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
 def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
 
-# --- Gráficos (Mantidos) ---
+# --- Gráficos ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -167,8 +208,10 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
+    
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
+    # KPIs
     k1, k2, k3 = st.columns(3)
     total_aulas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
     k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_aulas}</div></div>', unsafe_allow_html=True)
@@ -177,15 +220,21 @@ if st.session_state['pagina_atual'] == 'dashboard':
 
     st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
+    # Grid de Perfis
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             cor = USUARIOS_CONFIG[user]['color']
-            card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><div class="netflix-img" style="background:{cor if not img_b64 else "none"}; background-image: url({img_b64 if img_b64 else ""}); background-size: cover; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0] if not img_b64 else ""}</div><div class="netflix-name">{user}</div></div></a>'
+            if img_b64:
+                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><img src="{img_b64}" class="netflix-img"><div class="netflix-name">{user}</div></div></a>'
+            else:
+                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div><div class="netflix-name">{user}</div></div></a>'
             st.markdown(card_html, unsafe_allow_html=True)
 
     st.markdown("---")
+    
+    # Gráficos
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
@@ -200,7 +249,9 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
+    # ASSINATURA GABRIEL KUHN
     st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
+    
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
@@ -211,60 +262,35 @@ elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
-    
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
         st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
-    
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
     st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
-
     st.markdown("### 📚 Suas Disciplinas")
-    
-    # --- LÓGICA DE ORDENAÇÃO INTELIGENTE ---
-    # 1. Encontrar a última disciplina alterada baseada na coluna carimbo
-    ultima_disc = None
-    if "Ultima_Alteracao" in df.columns:
-        df_temp = df.copy()
-        # Converte para datetime para garantir ordenação correta
-        df_temp['Ultima_Alteracao'] = pd.to_datetime(df_temp['Ultima_Alteracao'], errors='coerce')
-        # Pega a linha com a data mais recente
-        linha_recente = df_temp.sort_values('Ultima_Alteracao', ascending=False).head(1)
-        if not linha_recente.empty:
-            ultima_disc = linha_recente.iloc[0]['Disciplina']
-
-    # 2. Montar a lista (Ultima primeiro, depois Alfabética)
-    todas_disc = sorted(df['Disciplina'].unique())
-    if ultima_disc and ultima_disc in todas_disc:
-        todas_disc.remove(ultima_disc)
-        lista_ordenada = [ultima_disc] + todas_disc
-    else:
-        lista_ordenada = todas_disc
-
+    disc_existentes = df['Disciplina'].unique()
+    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
+    lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
     cols = st.columns(2)
-    for i, disc in enumerate(lista_ordenada):
+    for i, disc in enumerate(lista):
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                
-                # Destaca se for a última alterada
-                label_recente = " ⏱️ (Recente)" if disc == ultima_disc else ""
-                
-                st.markdown(f"<h4 style='color:{cor if pct_d > 0 else '#444'}; margin-bottom:5px;'>{disc}{label_recente}</h4>", unsafe_allow_html=True)
+                c_tit = cor if pct_d > 0 else "#444"
+                st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
-    
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
@@ -279,13 +305,11 @@ elif st.session_state['pagina_atual'] == 'focus':
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
     with c_tit: st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
-    
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
     df_d = df[df['Disciplina'] == disc]
     status = df_d[user].apply(limpar_booleano)
     st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
-    
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
         c_k, c_t = st.columns([0.05, 0.95])
@@ -298,5 +322,4 @@ elif st.session_state['pagina_atual'] == 'focus':
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
             st.toast("Salvo!"); time.sleep(0.5); st.rerun()
-            
     st.markdown('</div>', unsafe_allow_html=True)
