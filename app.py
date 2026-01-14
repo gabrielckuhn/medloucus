@@ -16,41 +16,43 @@ def get_image_as_base64(path):
     except:
         return None
 
-def ordenar_disciplinas(disciplinas_todas, ultima_clicada):
-    """Ordena alfabeticamente e move a última clicada para o topo."""
-    lista_ordenada = sorted([str(d) for d in disciplinas_todas])
-    if ultima_clicada in lista_ordenada:
-        lista_ordenada.insert(0, lista_ordenada.pop(lista_ordenada.index(ultima_clicada)))
-    return lista_ordenada
-
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
-# --- LÓGICA DE PERSISTÊNCIA E NAVEGAÇÃO ---
-if 'pagina_atual' not in st.session_state: 
-    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
-
-# Captura parâmetros da URL para manter a disciplina no topo mesmo após F5
+# --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
 params = st.query_params
-if "user_login" in params and st.session_state['usuario_ativo'] is None:
-    st.session_state['usuario_ativo'] = params["user_login"]
-    st.session_state['pagina_atual'] = 'user_home'
-    if "last_disc" in params:
-        st.session_state['disciplina_ativa'] = params["last_disc"]
+if "user_login" in params:
+    selected_user = params["user_login"]
+    st.query_params.clear()
+    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
+    st.rerun()
 
 # --- CSS ESTRUTURAL ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
-    .main-wrapper { margin-top: 30px; }
+    
+    /* MARGEM NO TOPO DA PÁGINA PRINCIPAL */
+    .main-wrapper {
+        margin-top: 30px;
+    }
+
+    /* TÍTULO PRINCIPAL COM HOVER */
     .main-title {
-        text-align: center; color: white; font-size: 3rem; font-weight: 800;
-        transition: all 0.4s ease; cursor: default; margin-bottom: 20px;
+        text-align: center; 
+        color: white; 
+        font-size: 3rem; 
+        font-weight: 800;
+        transition: all 0.4s ease;
+        cursor: default;
+        margin-bottom: 20px;
     }
     .main-title:hover {
         transform: scale(1.05);
         text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
     }
+
+    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -61,16 +63,38 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
-    .footer-signature {
-        position: fixed; bottom: 10px; right: 20px;
-        color: rgba(255, 255, 255, 0.4); font-size: 0.8rem; z-index: 100;
+
+    /* TEXTO "ESCOLHA SEU PERFIL" */
+    .section-subtitle {
+        text-align:center; 
+        color: #555; 
+        margin-top: 5px; 
+        margin-bottom: 30px;
     }
-    .profile-container-wrapper { margin-top: 50px; }
+
+    /* RODAPÉ (COPYRIGHT) NO CANTO INFERIOR DIREITO */
+    .footer-signature {
+        position: fixed;
+        bottom: 10px;
+        right: 20px;
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 0.8rem;
+        z-index: 100;
+        font-family: sans-serif;
+    }
+
+    /* MARGEM SUPERIOR PÁGINA PERFIL */
+    .profile-container-wrapper {
+        margin-top: 50px;
+    }
+
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
+
+    /* ESTILO NETFLIX */
     .netflix-link { text-decoration: none !important; display: block; }
     .netflix-card { text-align: center; transition: transform 0.3s ease; cursor: pointer; }
     .netflix-card:hover { transform: scale(1.08); }
@@ -99,7 +123,7 @@ USUARIOS_CONFIG = {
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
-# --- Conexão ---
+# --- Conexão e Funções ---
 @st.cache_resource
 def conectar_google_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -111,10 +135,13 @@ def conectar_google_sheets():
 def carregar_dados():
     gc = conectar_google_sheets()
     if not gc: return pd.DataFrame(), None
-    sh = gc.open_by_url(PLANILHA_URL)
-    try: worksheet = sh.worksheet("Dados")
-    except: worksheet = sh.get_worksheet(0)
-    return pd.DataFrame(worksheet.get_all_records()), worksheet
+    for tentativa in range(3):
+        try:
+            sh = gc.open_by_url(PLANILHA_URL)
+            try: worksheet = sh.worksheet("Dados")
+            except: worksheet = sh.get_worksheet(0)
+            return pd.DataFrame(worksheet.get_all_records()), worksheet
+        except: time.sleep(1.5)
 
 def limpar_booleano(valor):
     if isinstance(valor, bool): return valor
@@ -126,19 +153,13 @@ def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
     except: st.error("Erro ao salvar.")
 
 # --- Navegação ---
-def ir_para_dashboard(): 
-    st.query_params.clear()
+if 'pagina_atual' not in st.session_state: 
     st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
-    st.rerun()
 
-def ir_para_disciplina(d): 
-    st.query_params.update({"user_login": st.session_state['usuario_ativo'], "last_disc": d})
-    st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d})
-    st.rerun()
-
-def voltar_para_usuario(): 
-    st.session_state.update({'pagina_atual': 'user_home'})
-    st.rerun()
+def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
+def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
+def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
+def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
 
 # --- Gráficos ---
 def renderizar_ranking(df, colunas_validas):
@@ -152,6 +173,31 @@ def renderizar_ranking(df, colunas_validas):
     fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
+def renderizar_top_disciplinas(df, colunas_validas):
+    df_t = df.copy(); df_t['Total'] = 0
+    for u in colunas_validas: df_t['Total'] += df_t[u].apply(limpar_booleano).astype(int)
+    agrup = df_t.groupby('Disciplina')['Total'].sum().reset_index().sort_values('Total', ascending=True).tail(8)
+    fig = go.Figure(go.Bar(x=agrup['Total'], y=agrup['Disciplina'], orientation='h', marker=dict(color=agrup['Total'], colorscale='Teal'), text=agrup['Total'], textposition='auto'))
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300, xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=False, tickfont=dict(size=12)), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+def renderizar_favoritas(df, colunas_validas):
+    data = []
+    for user in colunas_validas:
+        max_pct = 0; fav_disc = "—"
+        temp = df[df['Disciplina'].isin(df['Disciplina'].unique())].copy()
+        for disc in temp['Disciplina'].unique():
+            df_d = temp[temp['Disciplina'] == disc]
+            if len(df_d) > 0:
+                pct = df_d[user].apply(limpar_booleano).sum() / len(df_d)
+                if pct > max_pct: max_pct = pct; fav_disc = disc
+        if max_pct > 0: data.append({"User": user, "Disciplina": fav_disc, "Pct": max_pct * 100, "Cor": USUARIOS_CONFIG[user]["color"]})
+    df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
+    if df_fav.empty: return go.Figure()
+    fig = go.Figure(go.Bar(x=df_fav["Pct"], y=df_fav["User"], orientation='h', marker=dict(color=df_fav["Cor"]), text=df_fav.apply(lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)", axis=1), textposition='inside', insidetextanchor='middle', textfont=dict(color='white', size=13)))
+    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
 # --- Execução Principal ---
 df, worksheet = carregar_dados()
 if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
@@ -162,96 +208,118 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
+    
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
+    # KPIs
     k1, k2, k3 = st.columns(3)
     total_aulas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
-    k1.markdown(f'<div class="dashboard-card"><div class="card-title">Aulas (Total)</div><div style="font-size:36px; font-weight:800; color:#3498db;">{total_aulas}</div></div>', unsafe_allow_html=True)
-    k2.markdown(f'<div class="dashboard-card"><div class="card-title">Média/Copeiro</div><div style="font-size:36px; font-weight:800; color:#27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
-    k3.markdown(f'<div class="dashboard-card"><div class="card-title">Total Base</div><div style="font-size:36px; font-weight:800; color:#7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
+    k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_aulas}</div></div>', unsafe_allow_html=True)
+    k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
+    k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align:center; color:#555;'>Escolha seu perfil</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
+    
+    # Grid de Perfis
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+            cor = USUARIOS_CONFIG[user]['color']
             if img_b64:
                 card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><img src="{img_b64}" class="netflix-img"><div class="netflix-name">{user}</div></div></a>'
             else:
-                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><div class="netflix-img" style="background:{USUARIOS_CONFIG[user]["color"]}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div><div class="netflix-name">{user}</div></div></a>'
+                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div><div class="netflix-name">{user}</div></div></a>'
             st.markdown(card_html, unsafe_allow_html=True)
 
-    st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
+    st.markdown("---")
+    
+    # Gráficos
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="dashboard-card"><div class="card-title">🔥 Disciplinas Populares</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_top_disciplinas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown('<div class="dashboard-card"><div class="card-title">❤️ Favorita (Maior %)</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    # ASSINATURA GABRIEL KUHN
     st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Alfabético + Última no Topo Permanente)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
+    st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
-    
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
-        st.markdown(f'<div style="display:flex; align-items:center;">{img_html}<h1 style="color:{cor}; margin:0;">Olá, {user}!</h1></div>', unsafe_allow_html=True)
-
-    col_user = df[user].apply(limpar_booleano)
-    pct = col_user.sum() / len(df) if len(df) > 0 else 0
+        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    col = df[user].apply(limpar_booleano)
+    pct = col.sum() / len(df) if len(df) > 0 else 0
+    st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
-    
     st.markdown("### 📚 Suas Disciplinas")
-    
-    # ORDENAÇÃO
     disc_existentes = df['Disciplina'].unique()
-    ultima_disc = st.session_state.get('disciplina_ativa')
-    lista_organizada = ordenar_disciplinas(disc_existentes, ultima_disc)
-    
+    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
+    lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
     cols = st.columns(2)
-    for i, disc in enumerate(lista_organizada):
+    for i, disc in enumerate(lista):
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                
-                label_pino = " 📍" if disc == ultima_disc else ""
-                st.markdown(f"**{disc}{label_pino}**")
+                c_tit = cor if pct_d > 0 else "#444"
+                st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
-                c_txt, c_btn = st.columns([0.7, 0.3])
+                c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
-                if c_btn.button("Abrir", key=f"btn_{disc}"): 
-                    ir_para_disciplina(disc)
+                if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 3. MODO FOCO (Aulas)
+# 3. MODO FOCO
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
+    st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
     user = st.session_state['usuario_ativo']
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
-    
-    if st.button("⬅ Voltar"): voltar_para_usuario()
-    st.markdown(f"<h2 style='color:{cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
-    
-    col_idx = df.columns.get_loc(user) + 1
+    c_btn, c_tit = st.columns([0.1, 0.9])
+    with c_btn:
+        if st.button("⬅"): voltar_para_usuario()
+    with c_tit: st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
+    try: col_idx = df.columns.get_loc(user) + 1
+    except: col_idx = 0
     df_d = df[df['Disciplina'] == disc]
-    
+    status = df_d[user].apply(limpar_booleano)
+    st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
-        c_k, c_t = st.columns([0.1, 0.9])
+        c_k, c_t = st.columns([0.05, 0.95])
         with c_k:
-            novo = st.checkbox(" ", value=chk, key=f"foc_{idx}")
+            novo = st.checkbox("x", value=chk, key=f"k_{idx}_{user}", label_visibility="collapsed")
         with c_t:
-            if chk: st.markdown(f"~~Semana {row['Semana']}: {row['Aula']}~~")
-            else: st.markdown(f"**Semana {row['Semana']}**: {row['Aula']}")
-        
+            txt = f"**Semana {row['Semana']}**: {row['Aula']}"
+            if chk: st.markdown(f"<span style='color:{cor}; opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+            else: st.markdown(txt)
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
-            st.toast("Progresso Salvo!")
-            time.sleep(0.4)
-            st.rerun()
+            st.toast("Salvo!"); time.sleep(0.5); st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
