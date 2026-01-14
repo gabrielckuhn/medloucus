@@ -135,39 +135,63 @@ def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
     except: st.error("Erro ao salvar.")
 
 def registrar_acesso(worksheet, df, usuario, disciplina):
-    """Gera o código de acesso e salva na primeira linha da coluna LastSeen"""
     if 'LastSeen' not in df.columns: return
-    
     tag = USUARIOS_CONFIG[usuario]['tag']
     agora = datetime.now().strftime("%d/%m/%Y_%H:%M")
     novo_codigo = f"{tag}_{agora}_{disciplina.upper()}"
-    
-    # Pega o valor atual da célula (assumindo que o log fica na linha 2, coluna LastSeen)
     col_idx = df.columns.get_loc('LastSeen') + 1
     valor_atual = str(df.iloc[0]['LastSeen']) if not df.empty else ""
-    
-    # Adiciona o novo código e limita aos últimos 20 registros para não estourar a célula
-    historico = [novo_codigo] + ([v for v in valor_atual.split(';') if v and tag not in v] if valor_atual else [])
+    historico = [novo_codigo] + ([v for v in valor_atual.split(';') if v and not v.startswith(tag)] if valor_atual else [])
     valor_final = ";".join(historico[:20])
-    
-    try:
-        worksheet.update_cell(2, col_idx, valor_final)
-    except:
-        pass
+    try: worksheet.update_cell(2, col_idx, valor_final)
+    except: pass
 
 def obter_ultima_disciplina(df, usuario):
-    """Interpreta a coluna LastSeen para encontrar a última disciplina do usuário"""
     if 'LastSeen' not in df.columns or df.empty: return None
-    
     tag = USUARIOS_CONFIG[usuario]['tag']
     logs = str(df.iloc[0]['LastSeen']).split(';')
-    
     for log in logs:
         if log.startswith(tag):
             partes = log.split('_')
-            if len(partes) >= 4:
-                return partes[3].capitalize() # Retorna a Disciplina
+            if len(partes) >= 4: return partes[3].replace("OTORRINOLARINGOLOGIA", "Otorrino").capitalize()
     return None
+
+# --- Gráficos ---
+def renderizar_ranking(df, colunas_validas):
+    data = []
+    total = len(df)
+    for user in colunas_validas:
+        pct = df[user].apply(limpar_booleano).sum() / total * 100
+        data.append({"Nome": user, "Progresso": pct, "Cor": USUARIOS_CONFIG[user]["color"], "Label": f"<b>{user}</b>: {pct:.1f}%"})
+    df_rank = pd.DataFrame(data).sort_values("Progresso", ascending=True)
+    fig = go.Figure(go.Bar(x=df_rank["Progresso"], y=df_rank["Nome"], orientation='h', marker=dict(color=df_rank["Cor"]), text=df_rank["Label"], textposition='inside', insidetextanchor='middle', textfont=dict(size=14, color='white')))
+    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+def renderizar_top_disciplinas(df, colunas_validas):
+    df_t = df.copy(); df_t['Total'] = 0
+    for u in colunas_validas: df_t['Total'] += df_t[u].apply(limpar_booleano).astype(int)
+    agrup = df_t.groupby('Disciplina')['Total'].sum().reset_index().sort_values('Total', ascending=True).tail(8)
+    fig = go.Figure(go.Bar(x=agrup['Total'], y=agrup['Disciplina'], orientation='h', marker=dict(color=agrup['Total'], colorscale='Teal'), text=agrup['Total'], textposition='auto'))
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300, xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=False, tickfont=dict(size=12)), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+def renderizar_favoritas(df, colunas_validas):
+    data = []
+    for user in colunas_validas:
+        max_pct = 0; fav_disc = "—"
+        temp = df.copy()
+        for disc in temp['Disciplina'].unique():
+            if not disc: continue
+            df_d = temp[temp['Disciplina'] == disc]
+            pct = df_d[user].apply(limpar_booleano).sum() / len(df_d)
+            if pct > max_pct: max_pct = pct; fav_disc = disc
+        if max_pct > 0: data.append({"User": user, "Disciplina": fav_disc, "Pct": max_pct * 100, "Cor": USUARIOS_CONFIG[user]["color"]})
+    df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
+    if df_fav.empty: return go.Figure()
+    fig = go.Figure(go.Bar(x=df_fav["Pct"], y=df_fav["User"], orientation='h', marker=dict(color=df_fav["Cor"]), text=df_fav.apply(lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)", axis=1), textposition='inside', insidetextanchor='middle', textfont=dict(color='white', size=13)))
+    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
 
 # --- Navegação ---
 if 'pagina_atual' not in st.session_state: 
@@ -193,16 +217,45 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
+    # KPIs
+    k1, k2, k3 = st.columns(3)
+    total_concluidas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
+    k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_concluidas}</div></div>', unsafe_allow_html=True)
+    k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_concluidas/len(colunas_validas)) if colunas_validas else 0}</div></div>', unsafe_allow_html=True)
+    k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
+
+    st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
+    
+    # Perfis estilo Netflix
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             cor = USUARIOS_CONFIG[user]['color']
-            if img_b64:
-                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><img src="{img_b64}" class="netflix-img"><div class="netflix-name">{user}</div></div></a>'
-            else:
-                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div><div class="netflix-name">{user}</div></div></a>'
+            card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card">'
+            if img_b64: card_html += f'<img src="{img_b64}" class="netflix-img">'
+            else: card_html += f'<div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div>'
+            card_html += f'<div class="netflix-name">{user}</div></div></a>'
             st.markdown(card_html, unsafe_allow_html=True)
+
+    st.markdown("---")
+    
+    # GRÁFICOS
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="dashboard-card"><div class="card-title">🔥 Disciplinas Populares</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_top_disciplinas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown('<div class="dashboard-card"><div class="card-title">❤️ Favoritas</div>', unsafe_allow_html=True)
+        st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
@@ -224,18 +277,15 @@ elif st.session_state['pagina_atual'] == 'user_home':
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # --- LOGICA DE CONTINUAR ASSISTINDO ---
+    # Continuar Assistindo
     ultima_disc = obter_ultima_disciplina(df, user)
     if ultima_disc:
-        with st.container():
-            st.markdown(f"**Continuar de onde parou:**")
-            if st.button(f"🎬 {ultima_disc}", key="btn_resume"):
-                ir_para_disciplina(ultima_disc)
-            st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"**Continuar de onde parou:**")
+        if st.button(f"🎬 {ultima_disc}", key="resume"): ir_para_disciplina(ultima_disc)
+        st.markdown("<br>", unsafe_allow_html=True)
 
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
-    
     st.markdown(f'''
         <div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
             <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div>
@@ -245,31 +295,24 @@ elif st.session_state['pagina_atual'] == 'user_home':
             </div>
         </div>
     ''', unsafe_allow_html=True)
-    
     st.progress(pct)
+
     st.markdown("### 📚 Suas Disciplinas")
-    
-    lista_alfabetica = sorted(df['Disciplina'].unique())
+    lista_alfabetica = sorted([d for d in df['Disciplina'].unique() if d])
     cols = st.columns(2)
     for i, disc in enumerate(lista_alfabetica):
-        if not disc: continue
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                
-                if pct_d > 0:
-                    style_disc = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}"
-                else:
-                    style_disc = "color:#444;"
-                
+                style_disc = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
                 st.markdown(f"<h4 style='{style_disc} margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
-                if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
+                if c_btn.button("Abrir ➝", key=f"b_{disc}"): ir_para_disciplina(disc)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
@@ -285,28 +328,20 @@ elif st.session_state['pagina_atual'] == 'focus':
     c_btn, c_tit = st.columns([0.1, 0.9])
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
-    with c_tit: 
-        st.markdown(f"<h2 style='background: {cor}; padding: 5px 15px; border-radius: 10px; {glow_style_foco}'>📖 {disc}</h2>", unsafe_allow_html=True)
-    
-    try: col_idx = df.columns.get_loc(user) + 1
-    except: col_idx = 0
+    with c_tit: st.markdown(f"<h2 style='background: {cor}; padding: 5px 15px; border-radius: 10px; {glow_style_foco}'>📖 {disc}</h2>", unsafe_allow_html=True)
     
     df_d = df[df['Disciplina'] == disc]
-    status = df_d[user].apply(limpar_booleano)
-    st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
+    col_idx = df.columns.get_loc(user) + 1
+    st.info(f"Marcando como **{user}** ({df_d[user].apply(limpar_booleano).sum()}/{len(df_d)} concluídas)")
     
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
         c_k, c_t = st.columns([0.05, 0.95])
-        with c_k:
-            novo = st.checkbox("x", value=chk, key=f"k_{idx}_{user}", label_visibility="collapsed")
+        with c_k: novo = st.checkbox("x", value=chk, key=f"k_{idx}", label_visibility="collapsed")
         with c_t:
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
-            if chk: 
-                st.markdown(f"<span style='background: {cor}cc; padding: 2px 8px; border-radius: 4px; {glow_style_foco} text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-            else: 
-                st.markdown(txt)
-        
+            if chk: st.markdown(f"<span style='background: {cor}cc; padding: 2px 8px; border-radius: 4px; {glow_style_foco} text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+            else: st.markdown(txt)
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
             st.toast("Salvo!"); time.sleep(0.5); st.rerun()
