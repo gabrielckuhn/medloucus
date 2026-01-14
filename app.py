@@ -19,7 +19,7 @@ def get_image_as_base64(path):
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
-# --- CSS ESTRUTURAL E VISUAL ---
+# --- CSS ESTRUTURAL E VISUAL GERAL ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
@@ -155,51 +155,46 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     
-    # CSS Específico para o Efeito de Hover e Botão Invisível APENAS nesta página
+    # CSS para Estética Netflix (Quadrado e Hover)
     st.markdown("""
     <style>
-    /* Container que envolve a foto e o botão */
     .avatar-cell {
         position: relative;
         text-align: center;
         margin-bottom: 20px;
-        transition: transform 0.3s ease; /* Animação suave */
+        transition: transform 0.3s ease;
+        cursor: pointer;
     }
-    
-    /* A Animação de Subir */
     .avatar-cell:hover {
-        transform: translateY(-15px) scale(1.05);
+        transform: scale(1.05);
     }
-
-    /* Imagem */
     .avatar-img {
-        width: 150px; height: 150px;
-        border-radius: 50%; object-fit: cover;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 4px;
+        object-fit: cover;
+        border: 3px solid transparent;
+        transition: border 0.3s ease;
     }
-    
-    /* Texto do Nome */
+    .avatar-cell:hover .avatar-img {
+        border: 3px solid white;
+    }
     .avatar-name {
         margin-top: 10px;
-        font-weight: 800; font-size: 18px; color: #555; /* Cor Original Cinza */
-        transition: all 0.3s ease;
+        font-weight: 500;
+        font-size: 1.1rem;
+        color: grey;
+        transition: color 0.3s ease;
     }
-    
-    /* MUDANÇA DE COR NO HOVER (BRANCO COM CONTORNO/SOMBRA) */
     .avatar-cell:hover .avatar-name {
         color: white !important;
-        /* Cria um contorno com a sombra para o branco aparecer no fundo branco */
-        text-shadow: 0px 0px 8px var(--user-color), 0px 0px 8px var(--user-color); 
     }
-
-    /* O BOTÃO INVISÍVEL QUE COBRE TUDO */
-    /* Isso garante que onde clicar na célula, ativa o botão */
     div[data-testid="column"] button {
         position: absolute;
         top: 0; left: 0;
-        width: 100%; height: 200px; /* Altura suficiente para cobrir foto + nome */
-        opacity: 0 !important; /* Totalmente invisível */
-        z-index: 10; /* Fica por cima de tudo */
+        width: 100%; height: 100%;
+        opacity: 0 !important;
+        z-index: 10;
         cursor: pointer;
     }
     </style>
@@ -215,12 +210,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
     k2.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(media)}</div></div>""", unsafe_allow_html=True)
     k3.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Aulas</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>""", unsafe_allow_html=True)
 
-    # SELEÇÃO DE PERFIL
-    st.markdown("### 👤 Quem é você?")
-    
-    # Criamos colunas. O Streamlit coloca um botão dentro de cada coluna.
-    # O CSS acima (div[data-testid="column"] button) vai esticar esse botão
-    # para cobrir o conteúdo HTML que colocamos antes dele.
+    st.markdown("<h3 style='text-align:center; color:#555; margin-bottom:30px;'>Quem está assistindo?</h3>", unsafe_allow_html=True)
     
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
@@ -228,26 +218,22 @@ if st.session_state['pagina_atual'] == 'dashboard':
             cor = USUARIOS_CONFIG[user]['color']
             img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             
-            # Definimos uma variável CSS local para a cor do usuário (usada no text-shadow)
-            style_var = f"--user-color: {cor};"
-            
-            # HTML (Visual)
-            html_content = f"""
-            <div class="avatar-cell" style="{style_var}">
-                <img src="{img}" class="avatar-img" style="border: 5px solid {cor};">
-                <div class="avatar-name">{user}</div>
-            </div>
-            """ if img else f"""
-            <div class="avatar-cell" style="{style_var}">
-                <div class="avatar-img" style="border: 5px solid {cor}; background:#eee; display:flex; align-items:center; justify-content:center; font-size:40px;">{user[0]}</div>
-                <div class="avatar-name">{user}</div>
-            </div>
-            """
-            
+            if img:
+                html_content = f"""
+                <div class="avatar-cell">
+                    <img src="{img}" class="avatar-img">
+                    <div class="avatar-name">{user}</div>
+                </div>
+                """
+            else:
+                html_content = f"""
+                <div class="avatar-cell">
+                    <div class="avatar-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; font-size:40px; color:white;">{user[0]}</div>
+                    <div class="avatar-name">{user}</div>
+                </div>
+                """
             st.markdown(html_content, unsafe_allow_html=True)
             
-            # Botão Invisível (Funcional)
-            # O texto do label não importa, pois opacity: 0 esconde.
             if st.button(f"Entrar {user}", key=f"btn_{user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
@@ -270,7 +256,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL
+# 2. PERFIL (Mantido Original)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
@@ -300,7 +286,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
-                feitos = df_d[user].apply(limpar_booleano).sum(); total_d = len(df_d)
+                 feitos = df_d[user].apply(limpar_booleano).sum(); total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
                 c_tit = cor if pct_d > 0 else "#444"
                 st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
@@ -310,7 +296,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
 
 # =========================================================
-# 3. MODO FOCO
+# 3. MODO FOCO (Mantido Original)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
