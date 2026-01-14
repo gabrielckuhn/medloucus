@@ -91,14 +91,15 @@ def limpar_booleano(valor):
     return False
 
 # --- Navegação ---
-if 'pagina_atual' not in st.session_state: st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
+if 'pagina_atual' not in st.session_state: 
+    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
 
 def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
 def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
 def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
 def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
 
-# --- Gráficos ---
+# --- Gráficos (Mantidos) ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -155,59 +156,67 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     
-    # CSS para Estética Netflix (Quadrado e Hover) + Botão Sobreposto
+    # CSS RADICAL: Esconde o botão e posiciona sobre a imagem
     st.markdown("""
     <style>
-    .avatar-cell {
+    /* 1. Estilo do Card Visual */
+    .netflix-card {
         position: relative;
         text-align: center;
-        margin-bottom: 20px;
         transition: transform 0.3s ease;
     }
-    .avatar-cell:hover {
-        transform: scale(1.05);
+    .netflix-card:hover {
+        transform: scale(1.08);
     }
-    .avatar-img {
+    .netflix-img {
         width: 100%;
-        aspect-ratio: 1 / 1;
+        aspect-ratio: 1/1;
         border-radius: 4px;
         object-fit: cover;
         border: 3px solid transparent;
         transition: border 0.3s ease;
     }
-    .avatar-cell:hover .avatar-img {
+    .netflix-card:hover .netflix-img {
         border: 3px solid white;
     }
-    .avatar-name {
+    .netflix-name {
         margin-top: 10px;
-        font-weight: 500;
-        font-size: 1.1rem;
-        color: grey;
+        color: #808080;
+        font-size: 1.2rem;
         transition: color 0.3s ease;
     }
-    .avatar-cell:hover .avatar-name {
-        color: white !important;
+    .netflix-card:hover .netflix-name {
+        color: white;
     }
 
-    /* TORNA O BOTÃO TOTALMENTE INVISÍVEL E COBRE O CARD INTEIRO */
-    div[data-testid="column"] .stButton button {
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        background-color: transparent !important;
-        border: none !important;
-        color: transparent !important;
-        z-index: 10;
-        cursor: pointer;
-        box-shadow: none !important;
+    /* 2. Ocultar e Expandir o Botão do Streamlit */
+    /* Esse seletor ataca o container do botão dentro da coluna */
+    div[data-testid="column"] .stButton {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
     }
-    div[data-testid="column"] .stButton button:hover, 
-    div[data-testid="column"] .stButton button:active,
-    div[data-testid="column"] .stButton button:focus {
-        background-color: transparent !important;
-        color: transparent !important;
+
+    div[data-testid="column"] .stButton > button {
+        width: 100% !important;
+        height: 100% !important;
+        background: transparent !important;
         border: none !important;
-        outline: none !important;
+        color: transparent !important;
+        box-shadow: none !important;
+        cursor: pointer !important;
+        z-index: 10 !important;
+    }
+    
+    /* Remove efeitos de foco/clique do botão padrão */
+    div[data-testid="column"] .stButton > button:focus,
+    div[data-testid="column"] .stButton > button:active {
+        background: transparent !important;
+        color: transparent !important;
         box-shadow: none !important;
     }
     </style>
@@ -216,42 +225,42 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown("<h1 style='text-align: center; color: #2c3e50;'>🩺 MedTracker Copeiros</h1>", unsafe_allow_html=True)
     
     # KPIs
-    total = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
-    media = total / len(colunas_validas) if colunas_validas else 0
     k1, k2, k3 = st.columns(3)
-    k1.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total}</div></div>""", unsafe_allow_html=True)
-    k2.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(media)}</div></div>""", unsafe_allow_html=True)
-    k3.markdown(f"""<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Aulas</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>""", unsafe_allow_html=True)
+    total_aulas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
+    k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_aulas}</div></div>', unsafe_allow_html=True)
+    k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
+    k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
 
-    st.markdown("<h3 style='text-align:center; color:#555; margin-bottom:30px;'>Quem está assistindo?</h3>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center; color: #555; margin-top: 30px;'>Quem está assistindo?</h2>", unsafe_allow_html=True)
     
+    # GRID DE PERFIS
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
+            img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             cor = USUARIOS_CONFIG[user]['color']
-            img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             
-            # HTML Visual
-            if img:
-                html_content = f"""
-                <div class="avatar-cell">
-                    <img src="{img}" class="avatar-img">
-                    <div class="avatar-name">{user}</div>
+            # HTML VISUAL (Fica por baixo)
+            if img_b64:
+                visual_html = f'''
+                <div class="netflix-card">
+                    <img src="{img_b64}" class="netflix-img">
+                    <div class="netflix-name">{user}</div>
                 </div>
-                """
+                '''
             else:
-                html_content = f"""
-                <div class="avatar-cell">
-                    <div class="avatar-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; font-size:40px; color:white;">{user[0]}</div>
-                    <div class="avatar-name">{user}</div>
+                visual_html = f'''
+                <div class="netflix-card">
+                    <div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div>
+                    <div class="netflix-name">{user}</div>
                 </div>
-                """
-            st.markdown(html_content, unsafe_allow_html=True)
+                '''
             
-            # Botão Invisível que captura o clique sobre a imagem
-            if st.button(f"Entrar {user}", key=f"btn_{user}"):
-                if user in colunas_validas: ir_para_usuario(user)
-                else: st.error("Usuário não encontrado.")
+            st.markdown(visual_html, unsafe_allow_html=True)
+            
+            # BOTÃO INVISÍVEL (Fica por cima ocupando a coluna toda)
+            if st.button(" ", key=f"select_{user}"):
+                ir_para_usuario(user)
 
     st.markdown("---")
     
@@ -283,12 +292,12 @@ elif st.session_state['pagina_atual'] == 'user_home':
         if st.button("⬅", help="Voltar"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
-        st.markdown(f"""<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>""", unsafe_allow_html=True)
+        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
-    st.markdown(f"""<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>""", unsafe_allow_html=True)
+    st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
 
     st.markdown("### 📚 Suas Disciplinas")
