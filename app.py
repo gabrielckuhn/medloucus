@@ -16,6 +16,13 @@ def get_image_as_base64(path):
     except:
         return None
 
+def ordenar_disciplinas(disciplinas_todas, ultima_clicada):
+    """Ordena alfabeticamente e move a última clicada para o topo."""
+    lista_ordenada = sorted([str(d) for d in disciplinas_todas])
+    if ultima_clicada in lista_ordenada:
+        lista_ordenada.insert(0, lista_ordenada.pop(lista_ordenada.index(ultima_clicada)))
+    return lista_ordenada
+
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
@@ -31,28 +38,15 @@ if "user_login" in params:
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
-    
-    /* MARGEM NO TOPO DA PÁGINA PRINCIPAL */
-    .main-wrapper {
-        margin-top: 30px;
-    }
-
-    /* TÍTULO PRINCIPAL COM HOVER */
+    .main-wrapper { margin-top: 30px; }
     .main-title {
-        text-align: center; 
-        color: white; 
-        font-size: 3rem; 
-        font-weight: 800;
-        transition: all 0.4s ease;
-        cursor: default;
-        margin-bottom: 20px;
+        text-align: center; color: white; font-size: 3rem; font-weight: 800;
+        transition: all 0.4s ease; cursor: default; margin-bottom: 20px;
     }
     .main-title:hover {
         transform: scale(1.05);
         text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
     }
-
-    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -63,38 +57,17 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
-
-    /* TEXTO "ESCOLHA SEU PERFIL" */
-    .section-subtitle {
-        text-align:center; 
-        color: #555; 
-        margin-top: 5px; 
-        margin-bottom: 30px;
-    }
-
-    /* RODAPÉ (COPYRIGHT) NO CANTO INFERIOR DIREITO */
+    .section-subtitle { text-align:center; color: #555; margin-top: 5px; margin-bottom: 30px; }
     .footer-signature {
-        position: fixed;
-        bottom: 10px;
-        right: 20px;
-        color: rgba(255, 255, 255, 0.4);
-        font-size: 0.8rem;
-        z-index: 100;
-        font-family: sans-serif;
+        position: fixed; bottom: 10px; right: 20px;
+        color: rgba(255, 255, 255, 0.4); font-size: 0.8rem; z-index: 100;
     }
-
-    /* MARGEM SUPERIOR PÁGINA PERFIL */
-    .profile-container-wrapper {
-        margin-top: 50px;
-    }
-
+    .profile-container-wrapper { margin-top: 50px; }
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
-
-    /* ESTILO NETFLIX */
     .netflix-link { text-decoration: none !important; display: block; }
     .netflix-card { text-align: center; transition: transform 0.3s ease; cursor: pointer; }
     .netflix-card:hover { transform: scale(1.08); }
@@ -159,7 +132,7 @@ if 'pagina_atual' not in st.session_state:
 def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
 def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
 def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
-def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
+def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': st.session_state.get('disciplina_ativa')}); st.rerun()
 
 # --- Gráficos ---
 def renderizar_ranking(df, colunas_validas):
@@ -208,10 +181,8 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
-    
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
-    # KPIs
     k1, k2, k3 = st.columns(3)
     total_aulas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
     k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_aulas}</div></div>', unsafe_allow_html=True)
@@ -220,7 +191,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
 
     st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
-    # Grid de Perfis
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
@@ -233,8 +203,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
             st.markdown(card_html, unsafe_allow_html=True)
 
     st.markdown("---")
-    
-    # Gráficos
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
@@ -249,44 +217,52 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ASSINATURA GABRIEL KUHN
     st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
-    
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL
+# 2. PERFIL (Com Ordenação Alfabética + Última no Topo)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+    
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
         st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+    
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
     st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
+    
     st.markdown("### 📚 Suas Disciplinas")
+    
+    # Lógica de Ordenação
     disc_existentes = df['Disciplina'].unique()
-    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
-    lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
+    ultima_disc = st.session_state.get('disciplina_ativa')
+    lista_organizada = ordenar_disciplinas(disc_existentes, ultima_disc)
+    
     cols = st.columns(2)
-    for i, disc in enumerate(lista):
+    for i, disc in enumerate(lista_organizada):
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                c_tit = cor if pct_d > 0 else "#444"
-                st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
+                
+                # Highlight para a última clicada
+                c_tit = cor if disc == ultima_disc else ("#333" if pct_d > 0 else "#888")
+                label_extra = " (Última)" if disc == ultima_disc else ""
+                
+                st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}{label_extra}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
