@@ -56,7 +56,7 @@ st.markdown("""
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
-        margin-bottom: 10px; /* Reduzido para aproximar do título abaixo */
+        margin-bottom: 10px;
     }
     .card-title {
         color: #555; font-size: 18px; font-weight: 700;
@@ -68,8 +68,19 @@ st.markdown("""
     .section-subtitle {
         text-align:center; 
         color: #555; 
-        margin-top: 5px; /* Reduzido em 30px (era 35px no total com o gap do streamlit) */
+        margin-top: 5px; 
         margin-bottom: 30px;
+    }
+
+    /* RODAPÉ (COPYRIGHT) NO CANTO INFERIOR DIREITO */
+    .footer-signature {
+        position: fixed;
+        bottom: 10px;
+        right: 20px;
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 0.8rem;
+        z-index: 100;
+        font-family: sans-serif;
     }
 
     /* MARGEM SUPERIOR PÁGINA PERFIL */
@@ -112,7 +123,7 @@ USUARIOS_CONFIG = {
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
-# --- Conexão e Funções (Mantidas) ---
+# --- Conexão e Funções ---
 @st.cache_resource
 def conectar_google_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -150,7 +161,7 @@ def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home',
 def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
 def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
 
-# --- Gráficos (Mantidos) ---
+# --- Gráficos ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -196,7 +207,6 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # 1. DASHBOARD
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
-    # WRAPPER COM MARGEM SUPERIOR DE 30PX
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
     
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
@@ -208,7 +218,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
     k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
     k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
 
-    # SUBTÍTULO APROXIMADO DOS KPIs
     st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
     # Grid de Perfis
@@ -240,14 +249,16 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
-    st.markdown('</div>', unsafe_allow_html=True) # FIM DO WRAPPER
+    # ASSINATURA GABRIEL KUHN
+    st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Mantido conforme solicitado)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
-    # ... (Restante do código de perfil inalterado)
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
@@ -263,7 +274,6 @@ elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
     st.markdown("### 📚 Suas Disciplinas")
-    # ... (Restante do loop de disciplinas)
     disc_existentes = df['Disciplina'].unique()
     ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
     lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
@@ -283,7 +293,9 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ... (Modo Foco mantido com o wrapper)
+# =========================================================
+# 3. MODO FOCO
+# =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
     user = st.session_state['usuario_ativo']
