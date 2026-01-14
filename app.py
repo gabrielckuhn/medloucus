@@ -31,6 +31,22 @@ if "user_login" in params:
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
+    
+    /* TÍTULO PRINCIPAL COM HOVER */
+    .main-title {
+        text-align: center; 
+        color: white; 
+        font-size: 3rem; 
+        font-weight: 800;
+        transition: all 0.4s ease;
+        cursor: default;
+    }
+    .main-title:hover {
+        transform: scale(1.05);
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+    }
+
+    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -41,6 +57,12 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
+
+    /* MARGEM SUPERIOR PÁGINA PERFIL */
+    .profile-container-wrapper {
+        margin-top: 50px;
+    }
+
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
@@ -48,39 +70,19 @@ st.markdown("""
     }
 
     /* ESTILO NETFLIX */
-    .netflix-link {
-        text-decoration: none !important;
-        display: block;
-    }
-    .netflix-card {
-        text-align: center;
-        transition: transform 0.3s ease;
-        cursor: pointer;
-    }
-    .netflix-card:hover {
-        transform: scale(1.08);
-    }
+    .netflix-link { text-decoration: none !important; display: block; }
+    .netflix-card { text-align: center; transition: transform 0.3s ease; cursor: pointer; }
+    .netflix-card:hover { transform: scale(1.08); }
     .netflix-img {
-        width: 100%;
-        aspect-ratio: 1/1;
-        border-radius: 4px;
-        object-fit: cover;
-        border: 3px solid transparent;
-        transition: border 0.3s ease;
+        width: 100%; aspect-ratio: 1/1; border-radius: 4px;
+        object-fit: cover; border: 3px solid transparent; transition: border 0.3s ease;
     }
-    .netflix-card:hover .netflix-img {
-        border: 3px solid white;
-    }
+    .netflix-card:hover .netflix-img { border: 3px solid white; }
     .netflix-name {
-        margin-top: 10px;
-        color: #808080;
-        font-size: 1.2rem;
-        transition: color 0.3s ease;
-        text-decoration: none !important;
+        margin-top: 10px; color: #808080; font-size: 1.2rem;
+        transition: color 0.3s ease; text-decoration: none !important;
     }
-    .netflix-card:hover .netflix-name {
-        color: white;
-    }
+    .netflix-card:hover .netflix-name { color: white; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -179,7 +181,8 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # 1. DASHBOARD
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
-    st.markdown("<h1 style='text-align: center; color: #2c3e50;'>🩺 MedTracker Copeiros</h1>", unsafe_allow_html=True)
+    # TÍTULO BRANCO COM HOVER
+    st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
     # KPIs
     k1, k2, k3 = st.columns(3)
@@ -188,7 +191,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
     k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
     k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
 
-    # ALTERAÇÃO SOLICITADA: Frase centralizada
     st.markdown("<h2 style='text-align:center; color: #555; margin-top: 30px;'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
     # Grid de Perfis
@@ -236,9 +238,12 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL
+# 2. PERFIL (COM MARGEM SUPERIOR)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
+    # DIV DE WRAPPER PARA MARGEM DE 50PX
+    st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
+    
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
@@ -275,11 +280,15 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
+    
+    st.markdown('</div>', unsafe_allow_html=True) # FIM DO WRAPPER
 
 # =========================================================
-# 3. MODO FOCO
+# 3. MODO FOCO (COM MARGEM SUPERIOR)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
+    st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
+    
     user = st.session_state['usuario_ativo']
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
@@ -306,3 +315,5 @@ elif st.session_state['pagina_atual'] == 'focus':
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
             st.toast("Salvo!"); time.sleep(0.5); st.rerun()
+            
+    st.markdown('</div>', unsafe_allow_html=True) # FIM DO WRAPPER
