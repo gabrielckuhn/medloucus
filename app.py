@@ -28,7 +28,7 @@ if "user_login" in params:
     st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
     st.rerun()
 
-# --- CSS ESTRUTURAL ---
+# --- CSS ESTRUTURAL (Mantido) ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
@@ -97,29 +97,19 @@ def limpar_booleano(valor):
     if isinstance(valor, str): return valor.upper() == 'TRUE'
     return False
 
-# --- FUNÇÃO ATUALIZADA COM DATA E HORA SEPARADAS ---
 def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
     try:
         # 1. Atualiza o checkbox do usuário
         worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
         
-        # 2. Captura colunas dinamicamente
-        headers = worksheet.row_values(1)
-        agora = datetime.now()
-        
-        updates = []
-        if "Data" in headers:
-            col_data = headers.index("Data") + 1
-            updates.append({'range': gspread.utils.rowcol_to_a1(row_index + 2, col_data), 'values': [[agora.strftime("%d/%m/%Y")]]})
-        if "Hora" in headers:
-            col_hora = headers.index("Hora") + 1
-            updates.append({'range': gspread.utils.rowcol_to_a1(row_index + 2, col_hora), 'values': [[agora.strftime("%H:%M:%S")]]})
-        
-        if updates:
-            worksheet.batch_update(updates)
-            
-    except Exception as e:
-        st.error(f"Erro ao salvar: {e}")
+        # 2. Atualiza o carimbo de data/hora (Assume que a coluna 'Ultima_Alteracao' existe)
+        try:
+            headers = worksheet.row_values(1)
+            if "Ultima_Alteracao" in headers:
+                col_ts = headers.index("Ultima_Alteracao") + 1
+                worksheet.update_cell(row_index + 2, col_ts, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        except: pass # Se a coluna não existir, ele ignora sem quebrar o app
+    except: st.error("Erro ao salvar.")
 
 # --- Navegação ---
 if 'pagina_atual' not in st.session_state: 
@@ -197,7 +187,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
 
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
-    # ... (gráficos inalterados)
     with c1:
         st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
         st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
@@ -215,7 +204,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (LÓGICA DE ORDENAÇÃO POR DATA/HORA)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
@@ -231,33 +220,35 @@ elif st.session_state['pagina_atual'] == 'user_home':
         st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
-    col_user_data = df[user].apply(limpar_booleano)
-    pct = col_user_data.sum() / len(df) if len(df) > 0 else 0
-    st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col_user_data.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
+    col = df[user].apply(limpar_booleano)
+    pct = col.sum() / len(df) if len(df) > 0 else 0
+    st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
 
     st.markdown("### 📚 Suas Disciplinas")
     
-    # --- ORDENAÇÃO PELO CARIMBO DE DATA/HORA ---
+    # --- LÓGICA DE ORDENAÇÃO INTELIGENTE ---
+    # 1. Encontrar a última disciplina alterada baseada na coluna carimbo
     ultima_disc = None
-    if "Data" in df.columns and "Hora" in df.columns:
-        df_ord = df.copy()
-        # Concatena Data e Hora e converte para objeto datetime para ordenação real
-        df_ord['Timestamp'] = pd.to_datetime(df_ord['Data'] + ' ' + df_ord['Hora'], dayfirst=True, errors='coerce')
-        # Filtra apenas aulas que o usuário atual concluiu para ver a ÚLTIMA dele
-        df_recent = df_ord[df_ord[user].apply(limpar_booleano)].sort_values('Timestamp', ascending=False)
-        if not df_recent.empty:
-            ultima_disc = df_recent.iloc[0]['Disciplina']
+    if "Ultima_Alteracao" in df.columns:
+        df_temp = df.copy()
+        # Converte para datetime para garantir ordenação correta
+        df_temp['Ultima_Alteracao'] = pd.to_datetime(df_temp['Ultima_Alteracao'], errors='coerce')
+        # Pega a linha com a data mais recente
+        linha_recente = df_temp.sort_values('Ultima_Alteracao', ascending=False).head(1)
+        if not linha_recente.empty:
+            ultima_disc = linha_recente.iloc[0]['Disciplina']
 
+    # 2. Montar a lista (Ultima primeiro, depois Alfabética)
     todas_disc = sorted(df['Disciplina'].unique())
     if ultima_disc and ultima_disc in todas_disc:
         todas_disc.remove(ultima_disc)
-        lista_final = [ultima_disc] + todas_disc
+        lista_ordenada = [ultima_disc] + todas_disc
     else:
-        lista_final = todas_disc
+        lista_ordenada = todas_disc
 
     cols = st.columns(2)
-    for i, disc in enumerate(lista_final):
+    for i, disc in enumerate(lista_ordenada):
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
@@ -265,7 +256,9 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
                 
-                label_recente = " ⏱️" if disc == ultima_disc else ""
+                # Destaca se for a última alterada
+                label_recente = " ⏱️ (Recente)" if disc == ultima_disc else ""
+                
                 st.markdown(f"<h4 style='color:{cor if pct_d > 0 else '#444'}; margin-bottom:5px;'>{disc}{label_recente}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
                 c_txt, c_btn = st.columns([0.6, 0.4])
@@ -290,6 +283,8 @@ elif st.session_state['pagina_atual'] == 'focus':
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
     df_d = df[df['Disciplina'] == disc]
+    status = df_d[user].apply(limpar_booleano)
+    st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
     
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
@@ -300,9 +295,8 @@ elif st.session_state['pagina_atual'] == 'focus':
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
             if chk: st.markdown(f"<span style='color:{cor}; opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
             else: st.markdown(txt)
-        
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
-            st.toast("Progresso atualizado!"); time.sleep(0.5); st.rerun()
+            st.toast("Salvo!"); time.sleep(0.5); st.rerun()
             
     st.markdown('</div>', unsafe_allow_html=True)
