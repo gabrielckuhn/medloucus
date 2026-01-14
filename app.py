@@ -20,13 +20,10 @@ def get_image_as_base64(path):
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
 # --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
-# Esta parte precisa rodar ANTES de qualquer renderização
 params = st.query_params
 if "user_login" in params:
     selected_user = params["user_login"]
-    # Limpa o parâmetro para não ficar em loop
     st.query_params.clear()
-    # Define o estado e redireciona
     st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
     st.rerun()
 
@@ -50,7 +47,7 @@ st.markdown("""
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
 
-    /* ESTILO NETFLIX (CSS PURO) */
+    /* ESTILO NETFLIX */
     .netflix-link {
         text-decoration: none !important;
         display: block;
@@ -87,7 +84,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Dados e Conexão (Mantidos) ---
+# --- Dados ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 USUARIOS_CONFIG = {
     "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
@@ -136,7 +133,7 @@ def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home',
 def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
 def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
 
-# --- Gráficos (Mantidos) ---
+# --- Gráficos ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -173,7 +170,7 @@ def renderizar_favoritas(df, colunas_validas):
     fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
-# --- APP ---
+# --- Execução Principal ---
 df, worksheet = carregar_dados()
 if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
 colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
@@ -191,17 +188,16 @@ if st.session_state['pagina_atual'] == 'dashboard':
     k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
     k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align:center; color: #555; margin-top: 30px;'>Quem está assistindo?</h2>", unsafe_allow_html=True)
+    # ALTERAÇÃO SOLICITADA: Frase centralizada
+    st.markdown("<h2 style='text-align:center; color: #555; margin-top: 30px;'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
-    # GRID DE PERFIS COM LINKS REAIS (QUERY PARAMS)
+    # Grid de Perfis
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             cor = USUARIOS_CONFIG[user]['color']
             
-            # Monta o card como um Link HTML puro
-            # Ao clicar, a URL muda para ?user_login=Nome
             if img_b64:
                 card_html = f'''
                 <a href="?user_login={user}" target="_self" class="netflix-link">
@@ -240,7 +236,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Mantido Original)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
@@ -281,7 +277,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
 
 # =========================================================
-# 3. MODO FOCO (Mantido Original)
+# 3. MODO FOCO
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
