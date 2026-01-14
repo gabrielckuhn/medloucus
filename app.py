@@ -237,7 +237,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Com Glow na cor do usuário)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
@@ -245,25 +245,27 @@ elif st.session_state['pagina_atual'] == 'user_home':
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
     
-    # Glow suave na cor do usuário, texto sempre BRANCO
-    glow_style = f"color: white; text-shadow: 0 0 10px {cor}80, 0 0 5px {cor}40;"
+    # Estilo de Glow Suave para etiquetas
+    glow_style = f"color: white; text-shadow: 0 0 10px {cor}cc, 0 0 5px {cor}80;"
 
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
-        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: white;">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+        # Olá Fulano: Cor do usuário e sem shadow
+        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
     
+    # Porcentagem: Cor do usuário e sem shadow
     st.markdown(f'''
         <div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
             <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div>
             <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                <div style="font-size: 42px; font-weight: 900; {glow_style}">{int(pct*100)}%</div>
+                <div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div>
                 <div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div>
             </div>
         </div>
@@ -272,12 +274,11 @@ elif st.session_state['pagina_atual'] == 'user_home':
     st.progress(pct)
     st.markdown("### 📚 Suas Disciplinas")
     
-    disc_existentes = df['Disciplina'].unique()
-    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
-    lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
+    # Ordenação Alfabética das disciplinas
+    lista_alfabetica = sorted(df['Disciplina'].unique())
     
     cols = st.columns(2)
-    for i, disc in enumerate(lista):
+    for i, disc in enumerate(lista_alfabetica):
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
@@ -285,9 +286,9 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
                 
-                # Se houver progresso, texto BRANCO com glow na cor do perfil
+                # Disciplinas com progresso: Branco com Glow na cor do usuário
                 if pct_d > 0:
-                    style_disc = f"background: {cor}; color: white; padding: 5px 10px; border-radius: 5px; {glow_style}"
+                    style_disc = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}"
                 else:
                     style_disc = "color:#444;"
                 
@@ -299,7 +300,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 3. MODO FOCO (Com Glow na cor do usuário)
+# 3. MODO FOCO
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
@@ -307,15 +308,15 @@ elif st.session_state['pagina_atual'] == 'focus':
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
     
-    # Texto Branco com Glow na cor do perfil
-    glow_style = f"color: white; text-shadow: 0 0 12px {cor}, 0 0 6px {cor}80;"
+    # Glow suave para modo foco
+    glow_style_foco = f"color: white; text-shadow: 0 0 12px {cor}, 0 0 6px {cor}80;"
 
     c_btn, c_tit = st.columns([0.1, 0.9])
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
     with c_tit: 
-        # Disciplina em branco com brilho colorido ao fundo
-        st.markdown(f"<h2 style='background: {cor}; padding: 5px 15px; border-radius: 10px; {glow_style}'>📖 {disc}</h2>", unsafe_allow_html=True)
+        # Título da disciplina: Branco com Glow na cor do usuário
+        st.markdown(f"<h2 style='background: {cor}; padding: 5px 15px; border-radius: 10px; {glow_style_foco}'>📖 {disc}</h2>", unsafe_allow_html=True)
     
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
@@ -332,8 +333,8 @@ elif st.session_state['pagina_atual'] == 'focus':
         with c_t:
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
             if chk: 
-                # Texto concluído: Branco, Tachado e com Brilho Colorido suave
-                st.markdown(f"<span style='background: {cor}99; padding: 2px 8px; border-radius: 4px; {glow_style} text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+                # Aulas concluídas: Branco com Glow na cor do usuário e tachado
+                st.markdown(f"<span style='background: {cor}cc; padding: 2px 8px; border-radius: 4px; {glow_style_foco} text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
             else: 
                 st.markdown(txt)
         
