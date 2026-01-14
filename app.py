@@ -32,6 +32,11 @@ st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
+    /* MARGEM NO TOPO DA PÁGINA PRINCIPAL */
+    .main-wrapper {
+        margin-top: 30px;
+    }
+
     /* TÍTULO PRINCIPAL COM HOVER */
     .main-title {
         text-align: center; 
@@ -40,6 +45,7 @@ st.markdown("""
         font-weight: 800;
         transition: all 0.4s ease;
         cursor: default;
+        margin-bottom: 20px;
     }
     .main-title:hover {
         transform: scale(1.05);
@@ -50,12 +56,20 @@ st.markdown("""
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
-        margin-bottom: 20px;
+        margin-bottom: 10px; /* Reduzido para aproximar do título abaixo */
     }
     .card-title {
         color: #555; font-size: 18px; font-weight: 700;
         text-transform: uppercase; letter-spacing: 0.5px;
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
+    }
+
+    /* TEXTO "ESCOLHA SEU PERFIL" */
+    .section-subtitle {
+        text-align:center; 
+        color: #555; 
+        margin-top: 5px; /* Reduzido em 30px (era 35px no total com o gap do streamlit) */
+        margin-bottom: 30px;
     }
 
     /* MARGEM SUPERIOR PÁGINA PERFIL */
@@ -98,6 +112,7 @@ USUARIOS_CONFIG = {
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
+# --- Conexão e Funções (Mantidas) ---
 @st.cache_resource
 def conectar_google_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -135,7 +150,7 @@ def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home',
 def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
 def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
 
-# --- Gráficos ---
+# --- Gráficos (Mantidos) ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -181,7 +196,9 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # 1. DASHBOARD
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
-    # TÍTULO BRANCO COM HOVER
+    # WRAPPER COM MARGEM SUPERIOR DE 30PX
+    st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
+    
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
     # KPIs
@@ -191,7 +208,8 @@ if st.session_state['pagina_atual'] == 'dashboard':
     k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_aulas/len(colunas_validas))}</div></div>', unsafe_allow_html=True)
     k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
 
-    st.markdown("<h2 style='text-align:center; color: #555; margin-top: 30px;'>Escolha seu perfil</h2>", unsafe_allow_html=True)
+    # SUBTÍTULO APROXIMADO DOS KPIs
+    st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
     # Grid de Perfis
     cols = st.columns(6)
@@ -199,25 +217,10 @@ if st.session_state['pagina_atual'] == 'dashboard':
         with cols[i]:
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             cor = USUARIOS_CONFIG[user]['color']
-            
             if img_b64:
-                card_html = f'''
-                <a href="?user_login={user}" target="_self" class="netflix-link">
-                    <div class="netflix-card">
-                        <img src="{img_b64}" class="netflix-img">
-                        <div class="netflix-name">{user}</div>
-                    </div>
-                </a>
-                '''
+                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><img src="{img_b64}" class="netflix-img"><div class="netflix-name">{user}</div></div></a>'
             else:
-                card_html = f'''
-                <a href="?user_login={user}" target="_self" class="netflix-link">
-                    <div class="netflix-card">
-                        <div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div>
-                        <div class="netflix-name">{user}</div>
-                    </div>
-                </a>
-                '''
+                card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card"><div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div><div class="netflix-name">{user}</div></div></a>'
             st.markdown(card_html, unsafe_allow_html=True)
 
     st.markdown("---")
@@ -236,36 +239,34 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.markdown('<div class="dashboard-card"><div class="card-title">❤️ Favorita (Maior %)</div>', unsafe_allow_html=True)
         st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True) # FIM DO WRAPPER
 
 # =========================================================
-# 2. PERFIL (COM MARGEM SUPERIOR)
+# 2. PERFIL (Mantido conforme solicitado)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
-    # DIV DE WRAPPER PARA MARGEM DE 50PX
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
-    
+    # ... (Restante do código de perfil inalterado)
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
-    
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
         st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
-    
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
     st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
     st.progress(pct)
-
     st.markdown("### 📚 Suas Disciplinas")
-    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
+    # ... (Restante do loop de disciplinas)
     disc_existentes = df['Disciplina'].unique()
+    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
     lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
-    
     cols = st.columns(2)
     for i, disc in enumerate(lista):
         with cols[i % 2]:
@@ -280,15 +281,11 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
-    
-    st.markdown('</div>', unsafe_allow_html=True) # FIM DO WRAPPER
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# =========================================================
-# 3. MODO FOCO (COM MARGEM SUPERIOR)
-# =========================================================
+# ... (Modo Foco mantido com o wrapper)
 elif st.session_state['pagina_atual'] == 'focus':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
-    
     user = st.session_state['usuario_ativo']
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
@@ -296,13 +293,11 @@ elif st.session_state['pagina_atual'] == 'focus':
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
     with c_tit: st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
-    
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
     df_d = df[df['Disciplina'] == disc]
     status = df_d[user].apply(limpar_booleano)
     st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
-    
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
         c_k, c_t = st.columns([0.05, 0.95])
@@ -315,5 +310,4 @@ elif st.session_state['pagina_atual'] == 'focus':
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
             st.toast("Salvo!"); time.sleep(0.5); st.rerun()
-            
-    st.markdown('</div>', unsafe_allow_html=True) # FIM DO WRAPPER
+    st.markdown('</div>', unsafe_allow_html=True)
