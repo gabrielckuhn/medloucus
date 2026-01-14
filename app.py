@@ -28,16 +28,10 @@ if "user_login" in params:
     st.rerun()
 
 # --- CSS ESTRUTURAL ---
-# Adicionado estilo global para o brilho (glow)
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
-    /* Variável de brilho para reutilização */
-    .glow-text {
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 5px rgba(255, 255, 255, 0.9);
-    }
-
     .main-wrapper { margin-top: 30px; }
 
     .main-title {
@@ -102,14 +96,11 @@ st.markdown("""
         margin-top: 10px; color: #808080; font-size: 1.2rem;
         transition: color 0.3s ease; text-decoration: none !important;
     }
-    .netflix-card:hover .netflix-name { 
-        color: white; 
-        text-shadow: 0 0 10px rgba(255,255,255,0.5);
-    }
+    .netflix-card:hover .netflix-name { color: white; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Dados e Funções de apoio (Mesma lógica anterior) ---
+# --- Dados ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 USUARIOS_CONFIG = {
     "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
@@ -121,6 +112,7 @@ USUARIOS_CONFIG = {
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
+# --- Conexão e Funções ---
 @st.cache_resource
 def conectar_google_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -195,6 +187,7 @@ def renderizar_favoritas(df, colunas_validas):
     fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
+# --- Execução Principal ---
 df, worksheet = carregar_dados()
 if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
 colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
@@ -244,7 +237,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Ajustado com Brilho Branco)
+# 2. PERFIL (Com Glow na cor do usuário)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
@@ -252,22 +245,20 @@ elif st.session_state['pagina_atual'] == 'user_home':
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
     
-    # Glow Style para os textos coloridos
-    glow_style = f"color: {cor}; text-shadow: 0 0 12px rgba(255, 255, 255, 0.9), 0 0 5px rgba(255, 255, 255, 0.7);"
+    # Glow suave na cor do usuário, texto sempre BRANCO
+    glow_style = f"color: white; text-shadow: 0 0 10px {cor}80, 0 0 5px {cor}40;"
 
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
-        # Aplicado brilho no Olá Fulano
-        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; {glow_style}">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: white;">Olá, {user}!</h1></div>', unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
     
-    # Aplicado brilho na porcentagem do Card
     st.markdown(f'''
         <div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
             <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div>
@@ -294,9 +285,9 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
                 
-                # Se houver progresso, aplica a cor do perfil + brilho
+                # Se houver progresso, texto BRANCO com glow na cor do perfil
                 if pct_d > 0:
-                    style_disc = f"color:{cor}; text-shadow: 0 0 8px rgba(255,255,255,0.8);"
+                    style_disc = f"background: {cor}; color: white; padding: 5px 10px; border-radius: 5px; {glow_style}"
                 else:
                     style_disc = "color:#444;"
                 
@@ -308,7 +299,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 3. MODO FOCO (Ajustado com Brilho Branco)
+# 3. MODO FOCO (Com Glow na cor do usuário)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
@@ -316,15 +307,15 @@ elif st.session_state['pagina_atual'] == 'focus':
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
     
-    # Glow Style para foco
-    glow_style = f"color: {cor}; text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);"
+    # Texto Branco com Glow na cor do perfil
+    glow_style = f"color: white; text-shadow: 0 0 12px {cor}, 0 0 6px {cor}80;"
 
     c_btn, c_tit = st.columns([0.1, 0.9])
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
     with c_tit: 
-        # Título da disciplina com brilho
-        st.markdown(f"<h2 style='{glow_style}'>📖 {disc}</h2>", unsafe_allow_html=True)
+        # Disciplina em branco com brilho colorido ao fundo
+        st.markdown(f"<h2 style='background: {cor}; padding: 5px 15px; border-radius: 10px; {glow_style}'>📖 {disc}</h2>", unsafe_allow_html=True)
     
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
@@ -341,8 +332,8 @@ elif st.session_state['pagina_atual'] == 'focus':
         with c_t:
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
             if chk: 
-                # Texto concluído com cor do perfil, brilho e tachado
-                st.markdown(f"<span style='{glow_style} opacity:0.8; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+                # Texto concluído: Branco, Tachado e com Brilho Colorido suave
+                st.markdown(f"<span style='background: {cor}99; padding: 2px 8px; border-radius: 4px; {glow_style} text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
             else: 
                 st.markdown(txt)
         
