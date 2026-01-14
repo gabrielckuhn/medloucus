@@ -19,12 +19,21 @@ def get_image_as_base64(path):
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
-# --- CSS ESTRUTURAL E VISUAL GERAL ---
+# --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
+# Esta parte precisa rodar ANTES de qualquer renderização
+params = st.query_params
+if "user_login" in params:
+    selected_user = params["user_login"]
+    # Limpa o parâmetro para não ficar em loop
+    st.query_params.clear()
+    # Define o estado e redireciona
+    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
+    st.rerun()
+
+# --- CSS ESTRUTURAL ---
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
-    
-    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -35,135 +44,21 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
-    
-    /* GRÁFICOS */
-    .js-plotly-plot .plotly .modebar { display: none !important; }
-    
-    /* HEADER PERFIL */
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
         object-fit: cover; border: 3px solid white;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
-    </style>
-""", unsafe_allow_html=True)
 
-# --- Dados ---
-PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
-
-USUARIOS_CONFIG = {
-    "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
-    "Arthur":    {"color": "#263149", "img": "arthur.png"},
-    "Gabriel":   {"color": "#bf7000", "img": "gabriel.png"},
-    "Lívian":    {"color": "#0b4c00", "img": "livian.png"},
-    "Newton":    {"color": "#002322", "img": "newton.png"},
-    "Rafa":      {"color": "#c14121", "img": "rafa.png"}
-}
-LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
-
-# --- Conexão ---
-@st.cache_resource
-def conectar_google_sheets():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    try:
-        credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-        return gspread.authorize(credentials)
-    except: return None
-
-def carregar_dados():
-    gc = conectar_google_sheets()
-    if not gc: return pd.DataFrame(), None
-    for tentativa in range(3):
-        try:
-            sh = gc.open_by_url(PLANILHA_URL)
-            try: worksheet = sh.worksheet("Dados")
-            except: worksheet = sh.get_worksheet(0)
-            return pd.DataFrame(worksheet.get_all_records()), worksheet
-        except: time.sleep(1.5)
-            
-def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
-    try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
-    except: st.error("Erro ao salvar.")
-
-def limpar_booleano(valor):
-    if isinstance(valor, bool): return valor
-    if isinstance(valor, str): return valor.upper() == 'TRUE'
-    return False
-
-# --- Navegação ---
-if 'pagina_atual' not in st.session_state: 
-    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
-
-def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
-def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
-def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
-def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
-
-# --- Gráficos (Mantidos) ---
-def renderizar_ranking(df, colunas_validas):
-    data = []
-    total = len(df)
-    for user in colunas_validas:
-        pct = df[user].apply(limpar_booleano).sum() / total * 100
-        data.append({"Nome": user, "Progresso": pct, "Cor": USUARIOS_CONFIG[user]["color"], "Label": f"<b>{user}</b>: {pct:.1f}%"})
-    df_rank = pd.DataFrame(data).sort_values("Progresso", ascending=True)
-    fig = go.Figure(go.Bar(
-        x=df_rank["Progresso"], y=df_rank["Nome"], orientation='h', marker=dict(color=df_rank["Cor"]),
-        text=df_rank["Label"], textposition='inside', insidetextanchor='middle', textfont=dict(size=14, color='white')
-    ))
-    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-def renderizar_top_disciplinas(df, colunas_validas):
-    df_t = df.copy(); df_t['Total'] = 0
-    for u in colunas_validas: df_t['Total'] += df_t[u].apply(limpar_booleano).astype(int)
-    agrup = df_t.groupby('Disciplina')['Total'].sum().reset_index().sort_values('Total', ascending=True).tail(8)
-    fig = go.Figure(go.Bar(
-        x=agrup['Total'], y=agrup['Disciplina'], orientation='h', marker=dict(color=agrup['Total'], colorscale='Teal'),
-        text=agrup['Total'], textposition='auto'
-    ))
-    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300, xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=False, tickfont=dict(size=12)), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-def renderizar_favoritas(df, colunas_validas):
-    data = []
-    for user in colunas_validas:
-        max_pct = 0; fav_disc = "—"
-        temp = df[df['Disciplina'].isin(df['Disciplina'].unique())].copy()
-        for disc in temp['Disciplina'].unique():
-            df_d = temp[temp['Disciplina'] == disc]
-            if len(df_d) > 0:
-                pct = df_d[user].apply(limpar_booleano).sum() / len(df_d)
-                if pct > max_pct: max_pct = pct; fav_disc = disc
-        if max_pct > 0: data.append({"User": user, "Disciplina": fav_disc, "Pct": max_pct * 100, "Cor": USUARIOS_CONFIG[user]["color"]})
-    df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
-    if df_fav.empty: return go.Figure()
-    fig = go.Figure(go.Bar(
-        x=df_fav["Pct"], y=df_fav["User"], orientation='h', marker=dict(color=df_fav["Cor"]),
-        text=df_fav.apply(lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)", axis=1),
-        textposition='inside', insidetextanchor='middle', textfont=dict(color='white', size=13)
-    ))
-    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-# --- APP ---
-df, worksheet = carregar_dados()
-if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
-colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
-
-# =========================================================
-# 1. DASHBOARD
-# =========================================================
-if st.session_state['pagina_atual'] == 'dashboard':
-    
-    # CSS RADICAL: Esconde o botão e posiciona sobre a imagem
-    st.markdown("""
-    <style>
-    /* 1. Estilo do Card Visual */
+    /* ESTILO NETFLIX (CSS PURO) */
+    .netflix-link {
+        text-decoration: none !important;
+        display: block;
+    }
     .netflix-card {
-        position: relative;
         text-align: center;
         transition: transform 0.3s ease;
+        cursor: pointer;
     }
     .netflix-card:hover {
         transform: scale(1.08);
@@ -184,44 +79,109 @@ if st.session_state['pagina_atual'] == 'dashboard':
         color: #808080;
         font-size: 1.2rem;
         transition: color 0.3s ease;
+        text-decoration: none !important;
     }
     .netflix-card:hover .netflix-name {
         color: white;
     }
-
-    /* 2. Ocultar e Expandir o Botão do Streamlit */
-    /* Esse seletor ataca o container do botão dentro da coluna */
-    div[data-testid="column"] .stButton {
-        position: absolute !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100% !important;
-        height: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-    }
-
-    div[data-testid="column"] .stButton > button {
-        width: 100% !important;
-        height: 100% !important;
-        background: transparent !important;
-        border: none !important;
-        color: transparent !important;
-        box-shadow: none !important;
-        cursor: pointer !important;
-        z-index: 10 !important;
-    }
-    
-    /* Remove efeitos de foco/clique do botão padrão */
-    div[data-testid="column"] .stButton > button:focus,
-    div[data-testid="column"] .stButton > button:active {
-        background: transparent !important;
-        color: transparent !important;
-        box-shadow: none !important;
-    }
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
+# --- Dados e Conexão (Mantidos) ---
+PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
+USUARIOS_CONFIG = {
+    "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
+    "Arthur":    {"color": "#263149", "img": "arthur.png"},
+    "Gabriel":   {"color": "#bf7000", "img": "gabriel.png"},
+    "Lívian":    {"color": "#0b4c00", "img": "livian.png"},
+    "Newton":    {"color": "#002322", "img": "newton.png"},
+    "Rafa":      {"color": "#c14121", "img": "rafa.png"}
+}
+LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
+
+@st.cache_resource
+def conectar_google_sheets():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    try:
+        credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        return gspread.authorize(credentials)
+    except: return None
+
+def carregar_dados():
+    gc = conectar_google_sheets()
+    if not gc: return pd.DataFrame(), None
+    for tentativa in range(3):
+        try:
+            sh = gc.open_by_url(PLANILHA_URL)
+            try: worksheet = sh.worksheet("Dados")
+            except: worksheet = sh.get_worksheet(0)
+            return pd.DataFrame(worksheet.get_all_records()), worksheet
+        except: time.sleep(1.5)
+
+def limpar_booleano(valor):
+    if isinstance(valor, bool): return valor
+    if isinstance(valor, str): return valor.upper() == 'TRUE'
+    return False
+
+def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
+    try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
+    except: st.error("Erro ao salvar.")
+
+# --- Navegação ---
+if 'pagina_atual' not in st.session_state: 
+    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
+
+def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
+def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
+def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
+def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
+
+# --- Gráficos (Mantidos) ---
+def renderizar_ranking(df, colunas_validas):
+    data = []
+    total = len(df)
+    for user in colunas_validas:
+        pct = df[user].apply(limpar_booleano).sum() / total * 100
+        data.append({"Nome": user, "Progresso": pct, "Cor": USUARIOS_CONFIG[user]["color"], "Label": f"<b>{user}</b>: {pct:.1f}%"})
+    df_rank = pd.DataFrame(data).sort_values("Progresso", ascending=True)
+    fig = go.Figure(go.Bar(x=df_rank["Progresso"], y=df_rank["Nome"], orientation='h', marker=dict(color=df_rank["Cor"]), text=df_rank["Label"], textposition='inside', insidetextanchor='middle', textfont=dict(size=14, color='white')))
+    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+def renderizar_top_disciplinas(df, colunas_validas):
+    df_t = df.copy(); df_t['Total'] = 0
+    for u in colunas_validas: df_t['Total'] += df_t[u].apply(limpar_booleano).astype(int)
+    agrup = df_t.groupby('Disciplina')['Total'].sum().reset_index().sort_values('Total', ascending=True).tail(8)
+    fig = go.Figure(go.Bar(x=agrup['Total'], y=agrup['Disciplina'], orientation='h', marker=dict(color=agrup['Total'], colorscale='Teal'), text=agrup['Total'], textposition='auto'))
+    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300, xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=False, tickfont=dict(size=12)), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+def renderizar_favoritas(df, colunas_validas):
+    data = []
+    for user in colunas_validas:
+        max_pct = 0; fav_disc = "—"
+        temp = df[df['Disciplina'].isin(df['Disciplina'].unique())].copy()
+        for disc in temp['Disciplina'].unique():
+            df_d = temp[temp['Disciplina'] == disc]
+            if len(df_d) > 0:
+                pct = df_d[user].apply(limpar_booleano).sum() / len(df_d)
+                if pct > max_pct: max_pct = pct; fav_disc = disc
+        if max_pct > 0: data.append({"User": user, "Disciplina": fav_disc, "Pct": max_pct * 100, "Cor": USUARIOS_CONFIG[user]["color"]})
+    df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
+    if df_fav.empty: return go.Figure()
+    fig = go.Figure(go.Bar(x=df_fav["Pct"], y=df_fav["User"], orientation='h', marker=dict(color=df_fav["Cor"]), text=df_fav.apply(lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)", axis=1), textposition='inside', insidetextanchor='middle', textfont=dict(color='white', size=13)))
+    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    return fig
+
+# --- APP ---
+df, worksheet = carregar_dados()
+if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
+colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
+
+# =========================================================
+# 1. DASHBOARD
+# =========================================================
+if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown("<h1 style='text-align: center; color: #2c3e50;'>🩺 MedTracker Copeiros</h1>", unsafe_allow_html=True)
     
     # KPIs
@@ -233,34 +193,34 @@ if st.session_state['pagina_atual'] == 'dashboard':
 
     st.markdown("<h2 style='text-align:center; color: #555; margin-top: 30px;'>Quem está assistindo?</h2>", unsafe_allow_html=True)
     
-    # GRID DE PERFIS
+    # GRID DE PERFIS COM LINKS REAIS (QUERY PARAMS)
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
             img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             cor = USUARIOS_CONFIG[user]['color']
             
-            # HTML VISUAL (Fica por baixo)
+            # Monta o card como um Link HTML puro
+            # Ao clicar, a URL muda para ?user_login=Nome
             if img_b64:
-                visual_html = f'''
-                <div class="netflix-card">
-                    <img src="{img_b64}" class="netflix-img">
-                    <div class="netflix-name">{user}</div>
-                </div>
+                card_html = f'''
+                <a href="?user_login={user}" target="_self" class="netflix-link">
+                    <div class="netflix-card">
+                        <img src="{img_b64}" class="netflix-img">
+                        <div class="netflix-name">{user}</div>
+                    </div>
+                </a>
                 '''
             else:
-                visual_html = f'''
-                <div class="netflix-card">
-                    <div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div>
-                    <div class="netflix-name">{user}</div>
-                </div>
+                card_html = f'''
+                <a href="?user_login={user}" target="_self" class="netflix-link">
+                    <div class="netflix-card">
+                        <div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div>
+                        <div class="netflix-name">{user}</div>
+                    </div>
+                </a>
                 '''
-            
-            st.markdown(visual_html, unsafe_allow_html=True)
-            
-            # BOTÃO INVISÍVEL (Fica por cima ocupando a coluna toda)
-            if st.button(" ", key=f"select_{user}"):
-                ir_para_usuario(user)
+            st.markdown(card_html, unsafe_allow_html=True)
 
     st.markdown("---")
     
@@ -280,7 +240,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL
+# 2. PERFIL (Mantido Original)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
@@ -289,7 +249,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
     
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
-        if st.button("⬅", help="Voltar"): ir_para_dashboard()
+        if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
         st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
@@ -321,7 +281,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
 
 # =========================================================
-# 3. MODO FOCO
+# 3. MODO FOCO (Mantido Original)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
