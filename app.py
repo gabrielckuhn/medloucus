@@ -26,13 +26,19 @@ def ordenar_disciplinas(disciplinas_todas, ultima_clicada):
 # --- Configuração da Página ---
 st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
 
-# --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
+# --- LÓGICA DE PERSISTÊNCIA VIA URL (Query Params) ---
+# Isso garante que a última disciplina e o usuário não sumam ao dar F5
 params = st.query_params
+
 if "user_login" in params:
     selected_user = params["user_login"]
-    st.query_params.clear()
-    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
-    st.rerun()
+    # Se houver uma disciplina no link, salva no estado para o topo
+    ultima_disc_url = params.get("last_disc", None)
+    st.session_state.update({
+        'pagina_atual': 'user_home', 
+        'usuario_ativo': selected_user,
+        'disciplina_ativa': ultima_disc_url
+    })
 
 # --- CSS ESTRUTURAL ---
 st.markdown("""
@@ -129,12 +135,22 @@ def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
 if 'pagina_atual' not in st.session_state: 
     st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
 
-def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
-def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
-def ir_para_disciplina(d): st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d}); st.rerun()
-def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': st.session_state.get('disciplina_ativa')}); st.rerun()
+def ir_para_dashboard(): 
+    st.query_params.clear()
+    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None})
+    st.rerun()
 
-# --- Gráficos ---
+def ir_para_disciplina(d): 
+    # Ao abrir, salva na URL qual é a disciplina ativa
+    st.query_params.update({"user_login": st.session_state['usuario_ativo'], "last_disc": d})
+    st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d})
+    st.rerun()
+
+def voltar_para_usuario(): 
+    st.session_state.update({'pagina_atual': 'user_home'})
+    st.rerun()
+
+# --- Gráficos (Mantidos) ---
 def renderizar_ranking(df, colunas_validas):
     data = []
     total = len(df)
@@ -221,7 +237,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Com Ordenação Alfabética + Última no Topo)
+# 2. PERFIL (Definitivo: Alfabético + Última no Topo via URL)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
@@ -244,7 +260,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
     
     st.markdown("### 📚 Suas Disciplinas")
     
-    # Lógica de Ordenação
+    # Busca a última do estado (que agora é alimentado pela URL)
     disc_existentes = df['Disciplina'].unique()
     ultima_disc = st.session_state.get('disciplina_ativa')
     lista_organizada = ordenar_disciplinas(disc_existentes, ultima_disc)
@@ -258,9 +274,9 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
                 
-                # Highlight para a última clicada
+                # Highlight visual discreto
                 c_tit = cor if disc == ultima_disc else ("#333" if pct_d > 0 else "#888")
-                label_extra = " (Última)" if disc == ultima_disc else ""
+                label_extra = " 📍" if disc == ultima_disc else ""
                 
                 st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}{label_extra}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
@@ -281,11 +297,12 @@ elif st.session_state['pagina_atual'] == 'focus':
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
     with c_tit: st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
-    try: col_idx = df.columns.get_loc(user) + 1
-    except: col_idx = 0
+    
+    col_idx = df.columns.get_loc(user) + 1
     df_d = df[df['Disciplina'] == disc]
     status = df_d[user].apply(limpar_booleano)
     st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
+    
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
         c_k, c_t = st.columns([0.05, 0.95])
