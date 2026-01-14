@@ -256,7 +256,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL (Mantido Original)
+# 2. PERFIL
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     user = st.session_state['usuario_ativo']
@@ -286,7 +286,8 @@ elif st.session_state['pagina_atual'] == 'user_home':
         with cols[i % 2]:
             with st.container(border=True):
                 df_d = df[df['Disciplina'] == disc]
-                 feitos = df_d[user].apply(limpar_booleano).sum(); total_d = len(df_d)
+                feitos = df_d[user].apply(limpar_booleano).sum()
+                total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
                 c_tit = cor if pct_d > 0 else "#444"
                 st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
@@ -296,7 +297,7 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 if c_btn.button("Abrir ➝", key=f"b_{disc}_{user}"): ir_para_disciplina(disc)
 
 # =========================================================
-# 3. MODO FOCO (Mantido Original)
+# 3. MODO FOCO
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     user = st.session_state['usuario_ativo']
