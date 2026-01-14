@@ -155,7 +155,7 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     
-    # CSS para Estética Netflix (Quadrado e Hover)
+    # CSS para Estética Netflix (Quadrado e Hover) + Botão Sobreposto
     st.markdown("""
     <style>
     .avatar-cell {
@@ -163,7 +163,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
         text-align: center;
         margin-bottom: 20px;
         transition: transform 0.3s ease;
-        cursor: pointer;
     }
     .avatar-cell:hover {
         transform: scale(1.05);
@@ -189,13 +188,27 @@ if st.session_state['pagina_atual'] == 'dashboard':
     .avatar-cell:hover .avatar-name {
         color: white !important;
     }
-    div[data-testid="column"] button {
+
+    /* TORNA O BOTÃO TOTALMENTE INVISÍVEL E COBRE O CARD INTEIRO */
+    div[data-testid="column"] .stButton button {
         position: absolute;
         top: 0; left: 0;
         width: 100%; height: 100%;
-        opacity: 0 !important;
+        background-color: transparent !important;
+        border: none !important;
+        color: transparent !important;
         z-index: 10;
         cursor: pointer;
+        box-shadow: none !important;
+    }
+    div[data-testid="column"] .stButton button:hover, 
+    div[data-testid="column"] .stButton button:active,
+    div[data-testid="column"] .stButton button:focus {
+        background-color: transparent !important;
+        color: transparent !important;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -218,6 +231,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
             cor = USUARIOS_CONFIG[user]['color']
             img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
             
+            # HTML Visual
             if img:
                 html_content = f"""
                 <div class="avatar-cell">
@@ -234,6 +248,7 @@ if st.session_state['pagina_atual'] == 'dashboard':
                 """
             st.markdown(html_content, unsafe_allow_html=True)
             
+            # Botão Invisível que captura o clique sobre a imagem
             if st.button(f"Entrar {user}", key=f"btn_{user}"):
                 if user in colunas_validas: ir_para_usuario(user)
                 else: st.error("Usuário não encontrado.")
