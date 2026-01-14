@@ -28,16 +28,18 @@ if "user_login" in params:
     st.rerun()
 
 # --- CSS ESTRUTURAL ---
+# Adicionado estilo global para o brilho (glow)
 st.markdown("""
     <style>
     .block-container {padding-top: 2rem; padding-bottom: 5rem;}
     
-    /* MARGEM NO TOPO DA PÁGINA PRINCIPAL */
-    .main-wrapper {
-        margin-top: 30px;
+    /* Variável de brilho para reutilização */
+    .glow-text {
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 5px rgba(255, 255, 255, 0.9);
     }
 
-    /* TÍTULO PRINCIPAL COM HOVER */
+    .main-wrapper { margin-top: 30px; }
+
     .main-title {
         text-align: center; 
         color: white; 
@@ -52,7 +54,6 @@ st.markdown("""
         text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
     }
 
-    /* CARDS GERAIS */
     .dashboard-card {
         background-color: white; border-radius: 15px; padding: 20px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
@@ -64,7 +65,6 @@ st.markdown("""
         margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
     }
 
-    /* TEXTO "ESCOLHA SEU PERFIL" */
     .section-subtitle {
         text-align:center; 
         color: #555; 
@@ -72,7 +72,6 @@ st.markdown("""
         margin-bottom: 30px;
     }
 
-    /* RODAPÉ (COPYRIGHT) NO CANTO INFERIOR DIREITO */
     .footer-signature {
         position: fixed;
         bottom: 10px;
@@ -83,10 +82,7 @@ st.markdown("""
         font-family: sans-serif;
     }
 
-    /* MARGEM SUPERIOR PÁGINA PERFIL */
-    .profile-container-wrapper {
-        margin-top: 50px;
-    }
+    .profile-container-wrapper { margin-top: 50px; }
 
     .profile-header-img {
         width: 80px; height: 80px; border-radius: 50%;
@@ -94,7 +90,6 @@ st.markdown("""
         box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
     }
 
-    /* ESTILO NETFLIX */
     .netflix-link { text-decoration: none !important; display: block; }
     .netflix-card { text-align: center; transition: transform 0.3s ease; cursor: pointer; }
     .netflix-card:hover { transform: scale(1.08); }
@@ -107,11 +102,14 @@ st.markdown("""
         margin-top: 10px; color: #808080; font-size: 1.2rem;
         transition: color 0.3s ease; text-decoration: none !important;
     }
-    .netflix-card:hover .netflix-name { color: white; }
+    .netflix-card:hover .netflix-name { 
+        color: white; 
+        text-shadow: 0 0 10px rgba(255,255,255,0.5);
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Dados ---
+# --- Dados e Funções de apoio (Mesma lógica anterior) ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 USUARIOS_CONFIG = {
     "Ana Clara": {"color": "#400043", "img": "ana_clara.png"},
@@ -123,7 +121,6 @@ USUARIOS_CONFIG = {
 }
 LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
-# --- Conexão e Funções ---
 @st.cache_resource
 def conectar_google_sheets():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -198,7 +195,6 @@ def renderizar_favoritas(df, colunas_validas):
     fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     return fig
 
-# --- Execução Principal ---
 df, worksheet = carregar_dados()
 if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
 colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
@@ -208,10 +204,8 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
-    
     st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
     
-    # KPIs
     k1, k2, k3 = st.columns(3)
     total_aulas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
     k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_aulas}</div></div>', unsafe_allow_html=True)
@@ -220,7 +214,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
 
     st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
     
-    # Grid de Perfis
     cols = st.columns(6)
     for i, user in enumerate(LISTA_USUARIOS):
         with cols[i]:
@@ -233,8 +226,6 @@ if st.session_state['pagina_atual'] == 'dashboard':
             st.markdown(card_html, unsafe_allow_html=True)
 
     st.markdown("---")
-    
-    # Gráficos
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking de Progresso</div>', unsafe_allow_html=True)
@@ -249,34 +240,51 @@ if st.session_state['pagina_atual'] == 'dashboard':
         st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # ASSINATURA GABRIEL KUHN
     st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
-    
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 2. PERFIL
+# 2. PERFIL (Ajustado com Brilho Branco)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
     user = st.session_state['usuario_ativo']
     cor = USUARIOS_CONFIG[user]['color']
     img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
+    
+    # Glow Style para os textos coloridos
+    glow_style = f"color: {cor}; text-shadow: 0 0 12px rgba(255, 255, 255, 0.9), 0 0 5px rgba(255, 255, 255, 0.7);"
+
     c_back, c_head = st.columns([0.1, 0.9])
     with c_back:
         if st.button("⬅"): ir_para_dashboard()
     with c_head:
         img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
-        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+        # Aplicado brilho no Olá Fulano
+        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; {glow_style}">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+    
     st.markdown("<br>", unsafe_allow_html=True)
     col = df[user].apply(limpar_booleano)
     pct = col.sum() / len(df) if len(df) > 0 else 0
-    st.markdown(f'<div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;"><div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div><div style="display: flex; justify-content: space-between; align-items: baseline;"><div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div><div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div></div></div>', unsafe_allow_html=True)
+    
+    # Aplicado brilho na porcentagem do Card
+    st.markdown(f'''
+        <div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
+            <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <div style="font-size: 42px; font-weight: 900; {glow_style}">{int(pct*100)}%</div>
+                <div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div>
+            </div>
+        </div>
+    ''', unsafe_allow_html=True)
+    
     st.progress(pct)
     st.markdown("### 📚 Suas Disciplinas")
+    
     disc_existentes = df['Disciplina'].unique()
     ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
     lista = [d for d in ordem if d in disc_existentes] + [d for d in disc_existentes if d not in ordem]
+    
     cols = st.columns(2)
     for i, disc in enumerate(lista):
         with cols[i % 2]:
@@ -285,8 +293,14 @@ elif st.session_state['pagina_atual'] == 'user_home':
                 feitos = df_d[user].apply(limpar_booleano).sum()
                 total_d = len(df_d)
                 pct_d = feitos / total_d if total_d > 0 else 0
-                c_tit = cor if pct_d > 0 else "#444"
-                st.markdown(f"<h4 style='color:{c_tit}; margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
+                
+                # Se houver progresso, aplica a cor do perfil + brilho
+                if pct_d > 0:
+                    style_disc = f"color:{cor}; text-shadow: 0 0 8px rgba(255,255,255,0.8);"
+                else:
+                    style_disc = "color:#444;"
+                
+                st.markdown(f"<h4 style='{style_disc} margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
                 st.progress(pct_d)
                 c_txt, c_btn = st.columns([0.6, 0.4])
                 c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
@@ -294,22 +308,31 @@ elif st.session_state['pagina_atual'] == 'user_home':
     st.markdown('</div>', unsafe_allow_html=True)
 
 # =========================================================
-# 3. MODO FOCO
+# 3. MODO FOCO (Ajustado com Brilho Branco)
 # =========================================================
 elif st.session_state['pagina_atual'] == 'focus':
     st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
     user = st.session_state['usuario_ativo']
     disc = st.session_state['disciplina_ativa']
     cor = USUARIOS_CONFIG[user]['color']
+    
+    # Glow Style para foco
+    glow_style = f"color: {cor}; text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);"
+
     c_btn, c_tit = st.columns([0.1, 0.9])
     with c_btn:
         if st.button("⬅"): voltar_para_usuario()
-    with c_tit: st.markdown(f"<h2 style='color: {cor}'>📖 {disc}</h2>", unsafe_allow_html=True)
+    with c_tit: 
+        # Título da disciplina com brilho
+        st.markdown(f"<h2 style='{glow_style}'>📖 {disc}</h2>", unsafe_allow_html=True)
+    
     try: col_idx = df.columns.get_loc(user) + 1
     except: col_idx = 0
+    
     df_d = df[df['Disciplina'] == disc]
     status = df_d[user].apply(limpar_booleano)
     st.info(f"Marcando como **{user}** ({status.sum()}/{len(df_d)} concluídas)")
+    
     for idx, row in df_d.iterrows():
         chk = limpar_booleano(row[user])
         c_k, c_t = st.columns([0.05, 0.95])
@@ -317,8 +340,12 @@ elif st.session_state['pagina_atual'] == 'focus':
             novo = st.checkbox("x", value=chk, key=f"k_{idx}_{user}", label_visibility="collapsed")
         with c_t:
             txt = f"**Semana {row['Semana']}**: {row['Aula']}"
-            if chk: st.markdown(f"<span style='color:{cor}; opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-            else: st.markdown(txt)
+            if chk: 
+                # Texto concluído com cor do perfil, brilho e tachado
+                st.markdown(f"<span style='{glow_style} opacity:0.8; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+            else: 
+                st.markdown(txt)
+        
         if novo != chk:
             atualizar_status(worksheet, idx, col_idx, novo)
             st.toast("Salvo!"); time.sleep(0.5); st.rerun()
