@@ -18,7 +18,7 @@ def get_image_as_base64(path):
         return None
 
 # --- Configuração da Página ---
-st.set_page_config(page_title="MedTracker Copeiros", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="MedTrackers", page_icon="🩺", layout="wide")
 
 # --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
 params = st.query_params
@@ -141,6 +141,7 @@ def registrar_acesso(worksheet, df, usuario, disciplina):
     novo_codigo = f"{tag}_{agora}_{disciplina.upper()}"
     col_idx = df.columns.get_loc('LastSeen') + 1
     valor_atual = str(df.iloc[0]['LastSeen']) if not df.empty else ""
+    # Filtra para remover logs antigos desse usuário específico antes de inserir o novo no topo
     historico = [novo_codigo] + ([v for v in valor_atual.split(';') if v and not v.startswith(tag)] if valor_atual else [])
     valor_final = ";".join(historico[:20])
     try: worksheet.update_cell(2, col_idx, valor_final)
@@ -215,7 +216,7 @@ colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
 # =========================================================
 if st.session_state['pagina_atual'] == 'dashboard':
     st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
-    st.markdown('<div class="main-title">🩺 MedTracker Copeiros</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">🩺 MedTrackers</div>', unsafe_allow_html=True)
     
     # KPIs
     k1, k2, k3 = st.columns(3)
@@ -281,7 +282,12 @@ elif st.session_state['pagina_atual'] == 'user_home':
     ultima_disc = obter_ultima_disciplina(df, user)
     if ultima_disc:
         st.markdown(f"**Continuar de onde parou:**")
-        if st.button(f"🎬 {ultima_disc}", key="resume"): ir_para_disciplina(ultima_disc)
+        # Ajuste para garantir que a disciplina buscada exista no dataframe
+        if ultima_disc.upper() in [d.upper() for d in df['Disciplina'].unique() if d]:
+            if st.button(f"🎬 {ultima_disc}", key="resume"):
+                # Busca o nome exato da disciplina na planilha para evitar erros de case
+                nome_exato = [d for d in df['Disciplina'].unique() if str(d).upper() == ultima_disc.upper()][0]
+                ir_para_disciplina(nome_exato)
         st.markdown("<br>", unsafe_allow_html=True)
 
     col = df[user].apply(limpar_booleano)
