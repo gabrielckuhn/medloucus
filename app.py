@@ -17,7 +17,7 @@ st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="center
 # --- Constantes e CSS ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 
-# Nova cor principal (Laranja/Dourado)
+# Cor principal (Laranja/Dourado)
 COR_PRINCIPAL = "#bf7000" 
 
 # CSS Personalizado
@@ -34,8 +34,10 @@ st.markdown(f"""
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }}
         
-        /* Remove padding excessivo do topo */
-        .block-container {{ padding-top: 2rem; }}
+        /* AJUSTE SOLICITADO: Margem superior de 40px em todas as páginas */
+        .block-container {{ 
+            padding-top: 40px !important; 
+        }}
 
         /* Classe para o Texto em Degradê */
         .text-gradient {{
@@ -179,17 +181,17 @@ def realizar_logout():
 # --- INTERFACE ---
 
 def tela_login():
-    st.markdown("<br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Título com Degradê e novo Ícone
+        # AJUSTE DE ESPAÇAMENTO: Margem negativa no H1 e no P para aproximar
         st.markdown(
-            "<h1 style='text-align: center; margin-bottom: 0;'>"
+            "<h1 style='text-align: center; margin-bottom: -15px; line-height: 1.2;'>"
             "🩺 <span class='text-gradient'>MedTracker</span>"
             "</h1>", 
             unsafe_allow_html=True
         )
-        st.markdown("<p style='text-align: center; color: #666; margin-top: -10px;'>Seu companheiro de residência</p>", unsafe_allow_html=True)
+        # TEXTO ALTERADO
+        st.markdown("<p style='text-align: center; color: #666; margin-top: 0px;'>Gestor de estudos para medicina</p>", unsafe_allow_html=True)
         
         tab1, tab2 = st.tabs(["Entrar", "Criar Conta"])
         
@@ -221,7 +223,7 @@ def tela_login():
                 img = st_cropper(
                     Image.open(uploaded), 
                     aspect_ratio=(1,1), 
-                    box_color='#bf7000', # Caixa laranja também
+                    box_color='#bf7000',
                     should_resize_image=True, 
                     width=350 
                 )
@@ -338,7 +340,6 @@ def app_principal():
                     feitos = df_d[nome_coluna].apply(limpar_booleano).sum()
                     pct_d = feitos / len(df_d) if len(df_d) > 0 else 0
                     
-                    # Estilo atualizado com a nova cor
                     style = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
                     
                     st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{disc}</h4>", unsafe_allow_html=True)
