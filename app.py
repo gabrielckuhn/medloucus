@@ -173,35 +173,93 @@ def atualizar_senha_usuario(username, nova_senha_hash):
     ws_users.update_cell(cell.row, 3, nova_senha_hash)
     return True
 
+# --- FUNÇÕES DE LOG CORRIGIDAS ---
+
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
     try:
+        # Atualiza o Checkbox (TRUE/FALSE)
         worksheet.update_cell(row_idx + 2, col_idx, novo_valor)
+        
+        # Se marcou como feito, registra o Log NA MESMA LINHA
         if novo_valor:
-            registrar_acesso(worksheet, df_completo, username, disciplina)
+            registrar_acesso(worksheet, df_completo, username, disciplina, row_idx)
+            
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
 
-def registrar_acesso(worksheet, df, username, disciplina):
+def registrar_acesso(worksheet, df, username, disciplina, row_idx):
     if 'LastSeen' not in df.columns: return
+
     tag = str(username).upper()
     agora = datetime.now().strftime("%d/%m/%Y_%H:%M")
+    # Formato do Log: USERNAME_DATA_DISCIPLINA
     novo_codigo = f"{tag}_{agora}_{disciplina.upper()}"
-    col_idx = df.columns.get_loc('LastSeen') + 1
-    valor_atual = str(df.iloc[0]['LastSeen']) if not df.empty else ""
+    
+    # Índice da coluna LastSeen (no gspread é 1-based, no pandas 0-based)
+    col_idx_last_seen = df.columns.get_loc('LastSeen') + 1
+    
+    # Pega o valor atual DESTA LINHA ESPECÍFICA no DataFrame
+    valor_atual = str(df.iloc[row_idx]['LastSeen']) if not df.empty else ""
+    
+    # Lógica para manter histórico de OUTROS usuários nesta mesma linha, 
+    # mas substitui a entrada anterior deste usuário para não poluir a célula
     logs_existentes = [v for v in valor_atual.split(';') if v and not v.startswith(tag)]
+    
+    # Adiciona o log novo no início da lista
     historico = [novo_codigo] + logs_existentes
-    valor_final = ";".join(historico[:50])
-    try: worksheet.update_cell(2, col_idx, valor_final)
-    except: pass
+    
+    # Junta tudo e limita tamanho se necessário (opcional, aqui deixei livre mas organizado)
+    valor_final = ";".join(historico)
+    
+    try:
+        # row_idx do pandas começa em 0, Headers ocupam linha 1.
+        # Logo, linha do sheets = row_idx + 2
+        worksheet.update_cell(row_idx + 2, col_idx_last_seen, valor_final)
+    except Exception as e:
+        print(f"Erro log: {e}")
 
 def obter_ultima_disciplina(df, username):
+    """
+    Varre a coluna LastSeen inteira para encontrar a data mais recente 
+    associada ao usuário.
+    """
     if 'LastSeen' not in df.columns or df.empty: return None
+    
     tag = str(username).upper()
-    logs = str(df.iloc[0]['LastSeen']).split(';')
-    for log in logs:
-        if log.startswith(tag):
-            partes = log.split('_')
-            if len(partes) >= 4: return partes[3].title().replace("Otorrinolaringologia", "Otorrino")
+    ultima_data = None
+    ultima_disciplina = None
+    
+    # Converte para string para evitar erros de tipo
+    series_logs = df['LastSeen'].astype(str)
+    
+    for val in series_logs:
+        # Se o usuário tem registro nesta linha
+        if tag in val:
+            partes = val.split(';')
+            for log in partes:
+                if log.startswith(tag):
+                    try:
+                        # Log formato: USER_DATA_HORA_DISCIPLINA (split no '_')
+                        # Ex: USER_16/01/2026_10:30_CARDIOLOGIA
+                        dados = log.split('_')
+                        # Garantir que temos partes suficientes (User, Data, Hora, Disciplina)
+                        if len(dados) >= 4:
+                            data_str = f"{dados[1]}_{dados[2]}" # Reconstrói Data_Hora
+                            disc_nome = dados[3]
+                            
+                            data_obj = datetime.strptime(data_str, "%d/%m/%Y_%H:%M")
+                            
+                            # Verifica se esta é a data mais recente encontrada até agora
+                            if ultima_data is None or data_obj > ultima_data:
+                                ultima_data = data_obj
+                                ultima_disciplina = disc_nome
+                    except:
+                        # Se houver erro de formatação em um log antigo, ignora
+                        continue
+
+    if ultima_disciplina:
+        return ultima_disciplina.title().replace("Otorrinolaringologia", "Otorrino")
+    
     return None
 
 # --- Estado e Navegação ---
@@ -443,7 +501,9 @@ def app_principal():
 
         st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
         
+        # USA A NOVA FUNÇÃO DE BUSCA COMPLETA
         ultima_disc = obter_ultima_disciplina(df, username)
+        
         if ultima_disc:
             validas = [d for d in df['Disciplina'].unique() if d]
             match = next((d for d in validas if d.upper() == ultima_disc.upper()), None)
@@ -527,11 +587,12 @@ def app_principal():
                         ck, ct = st.columns([0.1, 0.9])
                         key = f"chk_{idx}_{nome_coluna}_sem"
                         with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
-                        with ct:
+                        with ct: 
                             txt = f"**{row['Disciplina']}**: {row.get('Aula','-')}"
                             if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
                             else: st.markdown(txt)
                         if novo != chk:
+                            # PASSANDO O IDX (LINHA) CORRETO
                             atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
                             time.sleep(0.5)
                             st.rerun()
@@ -543,11 +604,12 @@ def app_principal():
                 ck, ct = st.columns([0.1, 0.9])
                 key = f"chk_{idx}_{nome_coluna}"
                 with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
-                with ct:
+                with ct: 
                     txt = f"{row.get('Aula','-')}"
                     if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
                     else: st.markdown(txt)
                 if novo != chk:
+                    # PASSANDO O IDX (LINHA) CORRETO
                     atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
                     time.sleep(0.5)
                     st.rerun()
