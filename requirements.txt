@@ -5,3 +5,5 @@ google-auth
 plotly
 streamlit-authenticator
 bcrypt
+streamlit-cropper
+Pillow
