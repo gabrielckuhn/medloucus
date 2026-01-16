@@ -2,353 +2,254 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import bcrypt
+import re
 import time
-import plotly.graph_objects as go
-import base64
-from datetime import datetime
-
-# --- Funções Auxiliares ---
-def get_image_as_base64(path):
-    try:
-        with open(path, "rb") as f:
-            data = f.read()
-        encoded = base64.b64encode(data).decode()
-        return f"data:image/png;base64,{encoded}"
-    except:
-        return None
 
 # --- Configuração da Página ---
-st.set_page_config(page_title="MedTrackers", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="centered")
 
-# --- LÓGICA DE CAPTURA DE CLIQUE (Query Params) ---
-params = st.query_params
-if "user_login" in params:
-    selected_user = params["user_login"]
-    st.query_params.clear()
-    st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': selected_user})
-    st.rerun()
-
-# --- CSS ESTRUTURAL ---
-st.markdown("""
-    <style>
-    .block-container {padding-top: 2rem; padding-bottom: 5rem;}
-    .main-wrapper { margin-top: 30px; }
-    .main-title {
-        text-align: center; 
-        color: white; 
-        font-size: 3rem; 
-        font-weight: 800;
-        transition: all 0.4s ease;
-        cursor: default;
-        margin-bottom: 20px;
-    }
-    .main-title:hover {
-        transform: scale(1.05);
-        text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
-    }
-    .dashboard-card {
-        background-color: white; border-radius: 15px; padding: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #f0f0f0;
-        margin-bottom: 10px;
-    }
-    .card-title {
-        color: #555; font-size: 18px; font-weight: 700;
-        text-transform: uppercase; letter-spacing: 0.5px;
-        margin-bottom: 15px; border-bottom: 2px solid #f0f2f6; padding-bottom: 10px;
-    }
-    .section-subtitle {
-        text-align:center; 
-        color: #555; 
-        margin-top: 5px; 
-        margin-bottom: 30px;
-    }
-    .footer-signature {
-        position: fixed;
-        bottom: 10px;
-        right: 20px;
-        color: rgba(255, 255, 255, 0.4);
-        font-size: 0.8rem;
-        z-index: 100;
-        font-family: sans-serif;
-    }
-    .profile-container-wrapper { margin-top: 50px; }
-    .profile-header-img {
-        width: 80px; height: 80px; border-radius: 50%;
-        object-fit: cover; border: 3px solid white;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-right: 15px;
-    }
-    .netflix-link { text-decoration: none !important; display: block; }
-    .netflix-card { text-align: center; transition: transform 0.3s ease; cursor: pointer; }
-    .netflix-card:hover { transform: scale(1.08); }
-    .netflix-img {
-        width: 100%; aspect-ratio: 1/1; border-radius: 4px;
-        object-fit: cover; border: 3px solid transparent; transition: border 0.3s ease;
-    }
-    .netflix-card:hover .netflix-img { border: 3px solid white; }
-    .netflix-name {
-        margin-top: 10px; color: #808080; font-size: 1.2rem;
-        transition: color 0.3s ease; text-decoration: none !important;
-    }
-    .netflix-card:hover .netflix-name { color: white; }
-    </style>
-""", unsafe_allow_html=True)
-
-# --- Dados ---
+# --- Constantes ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
-USUARIOS_CONFIG = {
-    "Ana Clara": {"color": "#400043", "img": "ana_clara.png", "tag": "ANACLARA"},
-    "Arthur":    {"color": "#263149", "img": "arthur.png", "tag": "ARTHUR"},
-    "Gabriel":   {"color": "#bf7000", "img": "gabriel.png", "tag": "GABRIEL"},
-    "Lívian":    {"color": "#0b4c00", "img": "livian.png", "tag": "LIVIAN"},
-    "Newton":    {"color": "#002322", "img": "newton.png", "tag": "NEWTON"},
-    "Rafa":      {"color": "#c14121", "img": "rafa.png", "tag": "RAFA"}
-}
-LISTA_USUARIOS = list(USUARIOS_CONFIG.keys())
 
-# --- Conexão e Funções ---
+# --- Conexão Google Sheets ---
 @st.cache_resource
-def conectar_google_sheets():
+def get_gspread_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
-        credentials = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        credentials = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"], scopes=scopes
+        )
         return gspread.authorize(credentials)
-    except: return None
+    except Exception as e:
+        st.error(f"Erro de credenciais: {e}")
+        return None
 
-def carregar_dados():
-    gc = conectar_google_sheets()
-    if not gc: return pd.DataFrame(), None
-    for tentativa in range(3):
-        try:
-            sh = gc.open_by_url(PLANILHA_URL)
-            try: worksheet = sh.worksheet("Dados")
-            except: worksheet = sh.get_worksheet(0)
-            return pd.DataFrame(worksheet.get_all_records()), worksheet
-        except: time.sleep(1.5)
+# --- Funções de Autenticação e Segurança ---
 
-def limpar_booleano(valor):
-    if isinstance(valor, bool): return valor
-    if isinstance(valor, str): return valor.upper() == 'TRUE'
-    return False
+def validar_complexidade_senha(senha):
+    """
+    Verifica: Mínimo 8 chars, 1 maiúscula, 1 minúscula, 1 número, 1 caractere especial.
+    """
+    if len(senha) < 8:
+        return False, "A senha deve ter pelo menos 8 caracteres."
+    if not re.search(r"[a-z]", senha):
+        return False, "A senha deve ter pelo menos uma letra minúscula."
+    if not re.search(r"[A-Z]", senha):
+        return False, "A senha deve ter pelo menos uma letra maiúscula."
+    if not re.search(r"[0-9]", senha):
+        return False, "A senha deve ter pelo menos um número."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", senha):
+        return False, "A senha deve ter pelo menos um caractere especial (!@#$%)."
+    return True, "Senha válida."
 
-def atualizar_status(worksheet, row_index, col_index_num, novo_valor):
-    try: worksheet.update_cell(row_index + 2, col_index_num, novo_valor)
-    except: st.error("Erro ao salvar.")
+def hash_senha(senha):
+    # Gera um hash seguro da senha
+    return bcrypt.hashpw(senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
-def registrar_acesso(worksheet, df, usuario, disciplina):
-    if 'LastSeen' not in df.columns: return
-    tag = USUARIOS_CONFIG[usuario]['tag']
-    agora = datetime.now().strftime("%d/%m/%Y_%H:%M")
-    novo_codigo = f"{tag}_{agora}_{disciplina.upper()}"
-    col_idx = df.columns.get_loc('LastSeen') + 1
-    valor_atual = str(df.iloc[0]['LastSeen']) if not df.empty else ""
-    # Filtra para remover logs antigos desse usuário específico antes de inserir o novo no topo
-    historico = [novo_codigo] + ([v for v in valor_atual.split(';') if v and not v.startswith(tag)] if valor_atual else [])
-    valor_final = ";".join(historico[:20])
-    try: worksheet.update_cell(2, col_idx, valor_final)
-    except: pass
+def verificar_senha(senha_input, senha_hash):
+    # Compara a senha digitada com o hash salvo
+    return bcrypt.checkpw(senha_input.encode('utf-8'), senha_hash.encode('utf-8'))
 
-def obter_ultima_disciplina(df, usuario):
-    if 'LastSeen' not in df.columns or df.empty: return None
-    tag = USUARIOS_CONFIG[usuario]['tag']
-    logs = str(df.iloc[0]['LastSeen']).split(';')
-    for log in logs:
-        if log.startswith(tag):
-            partes = log.split('_')
-            if len(partes) >= 4: return partes[3].replace("OTORRINOLARINGOLOGIA", "Otorrino").capitalize()
+# --- Funções de Banco de Dados (Sheets) ---
+
+def buscar_usuario(username):
+    gc = get_gspread_client()
+    sh = gc.open_by_url(PLANILHA_URL)
+    worksheet = sh.worksheet("Usuarios")
+    records = worksheet.get_all_records()
+    
+    for user in records:
+        if user['username'] == username:
+            return user
     return None
 
-# --- Gráficos ---
-def renderizar_ranking(df, colunas_validas):
-    data = []
-    total = len(df)
-    for user in colunas_validas:
-        pct = df[user].apply(limpar_booleano).sum() / total * 100
-        data.append({"Nome": user, "Progresso": pct, "Cor": USUARIOS_CONFIG[user]["color"], "Label": f"<b>{user}</b>: {pct:.1f}%"})
-    df_rank = pd.DataFrame(data).sort_values("Progresso", ascending=True)
-    fig = go.Figure(go.Bar(x=df_rank["Progresso"], y=df_rank["Nome"], orientation='h', marker=dict(color=df_rank["Cor"]), text=df_rank["Label"], textposition='inside', insidetextanchor='middle', textfont=dict(size=14, color='white')))
-    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-def renderizar_top_disciplinas(df, colunas_validas):
-    df_t = df.copy(); df_t['Total'] = 0
-    for u in colunas_validas: df_t['Total'] += df_t[u].apply(limpar_booleano).astype(int)
-    agrup = df_t.groupby('Disciplina')['Total'].sum().reset_index().sort_values('Total', ascending=True).tail(8)
-    fig = go.Figure(go.Bar(x=agrup['Total'], y=agrup['Disciplina'], orientation='h', marker=dict(color=agrup['Total'], colorscale='Teal'), text=agrup['Total'], textposition='auto'))
-    fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300, xaxis=dict(showgrid=False, showticklabels=False), yaxis=dict(showgrid=False, tickfont=dict(size=12)), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-def renderizar_favoritas(df, colunas_validas):
-    data = []
-    for user in colunas_validas:
-        max_pct = 0; fav_disc = "—"
-        temp = df.copy()
-        for disc in temp['Disciplina'].unique():
-            if not disc: continue
-            df_d = temp[temp['Disciplina'] == disc]
-            pct = df_d[user].apply(limpar_booleano).sum() / len(df_d)
-            if pct > max_pct: max_pct = pct; fav_disc = disc
-        if max_pct > 0: data.append({"User": user, "Disciplina": fav_disc, "Pct": max_pct * 100, "Cor": USUARIOS_CONFIG[user]["color"]})
-    df_fav = pd.DataFrame(data).sort_values("Pct", ascending=True)
-    if df_fav.empty: return go.Figure()
-    fig = go.Figure(go.Bar(x=df_fav["Pct"], y=df_fav["User"], orientation='h', marker=dict(color=df_fav["Cor"]), text=df_fav.apply(lambda x: f"<b>{x['User']}</b>: {x['Disciplina']} ({x['Pct']:.0f}%)", axis=1), textposition='inside', insidetextanchor='middle', textfont=dict(color='white', size=13)))
-    fig.update_layout(margin=dict(l=0, r=10, t=0, b=0), height=300, yaxis=dict(showticklabels=False, showgrid=False), xaxis=dict(showgrid=False, showticklabels=False, range=[0, 105]), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    return fig
-
-# --- Navegação ---
-if 'pagina_atual' not in st.session_state: 
-    st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None, 'disciplina_ativa': None})
-
-def ir_para_dashboard(): st.session_state.update({'pagina_atual': 'dashboard', 'usuario_ativo': None}); st.rerun()
-def ir_para_usuario(nome): st.session_state.update({'pagina_atual': 'user_home', 'usuario_ativo': nome}); st.rerun()
-def ir_para_disciplina(d): 
-    registrar_acesso(worksheet, df, st.session_state['usuario_ativo'], d)
-    st.session_state.update({'pagina_atual': 'focus', 'disciplina_ativa': d})
-    st.rerun()
-def voltar_para_usuario(): st.session_state.update({'pagina_atual': 'user_home', 'disciplina_ativa': None}); st.rerun()
-
-# --- Execução Principal ---
-df, worksheet = carregar_dados()
-if df.empty or worksheet is None: st.error("Erro de conexão."); st.stop()
-colunas_validas = [u for u in LISTA_USUARIOS if u in df.columns]
-
-# =========================================================
-# 1. DASHBOARD
-# =========================================================
-if st.session_state['pagina_atual'] == 'dashboard':
-    st.markdown('<div class="main-wrapper">', unsafe_allow_html=True)
-    st.markdown('<div class="main-title">🩺 MedTrackers</div>', unsafe_allow_html=True)
+def criar_usuario(username, nome_completo, senha):
+    gc = get_gspread_client()
+    sh = gc.open_by_url(PLANILHA_URL)
     
-    # KPIs
-    k1, k2, k3 = st.columns(3)
-    total_concluidas = sum(df[u].apply(limpar_booleano).sum() for u in colunas_validas)
-    k1.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Aulas (Total)</div><div style="font-size: 36px; font-weight: 800; color: #3498db;">{total_concluidas}</div></div>', unsafe_allow_html=True)
-    k2.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Média/Copeiro</div><div style="font-size: 36px; font-weight: 800; color: #27ae60;">{int(total_concluidas/len(colunas_validas)) if colunas_validas else 0}</div></div>', unsafe_allow_html=True)
-    k3.markdown(f'<div class="dashboard-card" style="text-align:center;"><div class="card-title">Total Base</div><div style="font-size: 36px; font-weight: 800; color: #7f8c8d;">{len(df)}</div></div>', unsafe_allow_html=True)
-
-    st.markdown("<h2 class='section-subtitle'>Escolha seu perfil</h2>", unsafe_allow_html=True)
+    # 1. Salvar na aba Usuarios
+    ws_users = sh.worksheet("Usuarios")
     
-    # Perfis estilo Netflix
-    cols = st.columns(6)
-    for i, user in enumerate(LISTA_USUARIOS):
-        with cols[i]:
-            img_b64 = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
-            cor = USUARIOS_CONFIG[user]['color']
-            card_html = f'<a href="?user_login={user}" target="_self" class="netflix-link"><div class="netflix-card">'
-            if img_b64: card_html += f'<img src="{img_b64}" class="netflix-img">'
-            else: card_html += f'<div class="netflix-img" style="background:{cor}; display:flex; align-items:center; justify-content:center; color:white; font-size:40px;">{user[0]}</div>'
-            card_html += f'<div class="netflix-name">{user}</div></div></a>'
-            st.markdown(card_html, unsafe_allow_html=True)
-
-    st.markdown("---")
+    # Verifica se já existe
+    cell = ws_users.find(username)
+    if cell:
+        return False, "Nome de usuário já existe."
     
-    # GRÁFICOS
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown('<div class="dashboard-card"><div class="card-title">🏆 Ranking</div>', unsafe_allow_html=True)
-        st.plotly_chart(renderizar_ranking(df, colunas_validas), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with c2:
-        st.markdown('<div class="dashboard-card"><div class="card-title">🔥 Disciplinas Populares</div>', unsafe_allow_html=True)
-        st.plotly_chart(renderizar_top_disciplinas(df, colunas_validas), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with c3:
-        st.markdown('<div class="dashboard-card"><div class="card-title">❤️ Favoritas</div>', unsafe_allow_html=True)
-        st.plotly_chart(renderizar_favoritas(df, colunas_validas), use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="footer-signature">Criado por Gabriel Kuhn®</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# =========================================================
-# 2. PERFIL
-# =========================================================
-elif st.session_state['pagina_atual'] == 'user_home':
-    st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
-    user = st.session_state['usuario_ativo']
-    cor = USUARIOS_CONFIG[user]['color']
-    img = get_image_as_base64(USUARIOS_CONFIG[user]['img'])
-    glow_style = f"color: white; text-shadow: 0 0 10px {cor}cc, 0 0 5px {cor}80;"
-
-    c_back, c_head = st.columns([0.1, 0.9])
-    with c_back:
-        if st.button("⬅"): ir_para_dashboard()
-    with c_head:
-        img_html = f'<img src="{img}" class="profile-header-img" style="border-color:{cor}">' if img else ""
-        st.markdown(f'<div style="display: flex; align-items: center;">{img_html}<h1 style="margin: 0; color: {cor};">Olá, {user}!</h1></div>', unsafe_allow_html=True)
+    senha_segura = hash_senha(senha)
+    ws_users.append_row([username, nome_completo, senha_segura])
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    # 2. Criar coluna na aba Dados para marcar progresso
+    try:
+        ws_dados = sh.worksheet("Dados")
+        # Verifica se o cabeçalho já existe
+        headers = ws_dados.row_values(1)
+        if nome_completo not in headers:
+            # Adiciona o nome na primeira linha da próxima coluna vazia
+            col_index = len(headers) + 1
+            ws_dados.update_cell(1, col_index, nome_completo)
+            # Preenche com FALSE para todas as linhas existentes (opcional, mas bom para evitar vazios)
+            # O gspread não tem "fill column" fácil, então vamos deixar o app tratar vazios como False
+    except Exception as e:
+        return False, f"Usuário criado, mas erro ao criar coluna de dados: {e}"
+
+    return True, "Conta criada com sucesso!"
+
+# --- Lógica da Interface ---
+
+# Inicializa Session State
+if 'logado' not in st.session_state:
+    st.session_state['logado'] = False
+if 'usuario_atual' not in st.session_state:
+    st.session_state['usuario_atual'] = None # Guarda o dicionário do usuário
+
+def tela_login():
+    st.title("🔐 MedTracker - Acesso")
     
-    # Continuar Assistindo
-    ultima_disc = obter_ultima_disciplina(df, user)
-    if ultima_disc:
-        st.markdown(f"**Continuar de onde parou:**")
-        # Ajuste para garantir que a disciplina buscada exista no dataframe
-        if ultima_disc.upper() in [d.upper() for d in df['Disciplina'].unique() if d]:
-            if st.button(f"🎬 {ultima_disc}", key="resume"):
-                # Busca o nome exato da disciplina na planilha para evitar erros de case
-                nome_exato = [d for d in df['Disciplina'].unique() if str(d).upper() == ultima_disc.upper()][0]
-                ir_para_disciplina(nome_exato)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-    col = df[user].apply(limpar_booleano)
-    pct = col.sum() / len(df) if len(df) > 0 else 0
-    st.markdown(f'''
-        <div style="background: white; border-left: 8px solid {cor}; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 30px;">
-            <div style="color: #888; font-size: 14px; text-transform: uppercase; font-weight: bold;">Progresso Total</div>
-            <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                <div style="font-size: 42px; font-weight: 900; color: {cor};">{int(pct*100)}%</div>
-                <div style="font-size: 16px; color: #555;"><strong>{col.sum()}</strong> de {len(df)} aulas</div>
-            </div>
-        </div>
-    ''', unsafe_allow_html=True)
-    st.progress(pct)
-
-    st.markdown("### 📚 Suas Disciplinas")
-    lista_alfabetica = sorted([d for d in df['Disciplina'].unique() if d])
-    cols = st.columns(2)
-    for i, disc in enumerate(lista_alfabetica):
-        with cols[i % 2]:
-            with st.container(border=True):
-                df_d = df[df['Disciplina'] == disc]
-                feitos = df_d[user].apply(limpar_booleano).sum()
-                total_d = len(df_d)
-                pct_d = feitos / total_d if total_d > 0 else 0
-                style_disc = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
-                st.markdown(f"<h4 style='{style_disc} margin-bottom:5px;'>{disc}</h4>", unsafe_allow_html=True)
-                st.progress(pct_d)
-                c_txt, c_btn = st.columns([0.6, 0.4])
-                c_txt.caption(f"{int(pct_d*100)}% ({feitos}/{total_d})")
-                if c_btn.button("Abrir ➝", key=f"b_{disc}"): ir_para_disciplina(disc)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# =========================================================
-# 3. MODO FOCO
-# =========================================================
-elif st.session_state['pagina_atual'] == 'focus':
-    st.markdown('<div class="profile-container-wrapper">', unsafe_allow_html=True)
-    user = st.session_state['usuario_ativo']
-    disc = st.session_state['disciplina_ativa']
-    cor = USUARIOS_CONFIG[user]['color']
-    glow_style_foco = f"color: white; text-shadow: 0 0 12px {cor}, 0 0 6px {cor}80;"
-
-    c_btn, c_tit = st.columns([0.1, 0.9])
-    with c_btn:
-        if st.button("⬅"): voltar_para_usuario()
-    with c_tit: st.markdown(f"<h2 style='background: {cor}; padding: 5px 15px; border-radius: 10px; {glow_style_foco}'>📖 {disc}</h2>", unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["Entrar (Login)", "Criar Conta (Sign Up)"])
     
-    df_d = df[df['Disciplina'] == disc]
-    col_idx = df.columns.get_loc(user) + 1
-    st.info(f"Marcando como **{user}** ({df_d[user].apply(limpar_booleano).sum()}/{len(df_d)} concluídas)")
+    with tab1:
+        with st.form("login_form"):
+            user_input = st.text_input("Usuário")
+            pass_input = st.text_input("Senha", type="password")
+            submit_login = st.form_submit_button("Entrar")
+            
+            if submit_login:
+                if not user_input or not pass_input:
+                    st.warning("Preencha todos os campos.")
+                else:
+                    usuario_db = buscar_usuario(user_input)
+                    if usuario_db and verificar_senha(pass_input, usuario_db['senha_hash']):
+                        st.session_state['logado'] = True
+                        st.session_state['usuario_atual'] = usuario_db
+                        st.success("Login realizado!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Usuário ou senha incorretos.")
+
+    with tab2:
+        st.markdown("### Novo por aqui?")
+        with st.form("signup_form"):
+            new_user = st.text_input("Escolha um Usuário (Login)")
+            new_name = st.text_input("Seu Nome (como aparecerá na planilha)")
+            new_pass = st.text_input("Senha", type="password")
+            confirm_pass = st.text_input("Confirmar Senha", type="password")
+            
+            submit_signup = st.form_submit_button("Criar Conta")
+            
+            if submit_signup:
+                if new_pass != confirm_pass:
+                    st.error("As senhas não coincidem.")
+                else:
+                    valida, msg = validar_complexidade_senha(new_pass)
+                    if not valida:
+                        st.error(msg)
+                    elif not new_user or not new_name:
+                        st.error("Preencha todos os campos.")
+                    else:
+                        with st.spinner("Criando sua área de estudos..."):
+                            sucesso, msg_retorno = criar_usuario(new_user, new_name, new_pass)
+                            if sucesso:
+                                st.success(msg_retorno)
+                                st.info("Agora faça login na aba 'Entrar'.")
+                            else:
+                                st.error(msg_retorno)
+
+def tela_principal():
+    # Muda layout para wide quando logado para caber as tabelas
+    # (Streamlit não permite mudar layout dinamicamente fácil, então mantemos o set_page_config, 
+    # mas usamos CSS ou containers para expandir se necessário)
     
-    for idx, row in df_d.iterrows():
-        chk = limpar_booleano(row[user])
-        c_k, c_t = st.columns([0.05, 0.95])
-        with c_k: novo = st.checkbox("x", value=chk, key=f"k_{idx}", label_visibility="collapsed")
-        with c_t:
-            txt = f"**Semana {row['Semana']}**: {row['Aula']}"
-            if chk: st.markdown(f"<span style='background: {cor}cc; padding: 2px 8px; border-radius: 4px; {glow_style_foco} text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-            else: st.markdown(txt)
-        if novo != chk:
-            atualizar_status(worksheet, idx, col_idx, novo)
-            st.toast("Salvo!"); time.sleep(0.5); st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    usuario = st.session_state['usuario_atual']
+    nome_na_planilha = usuario['nome_completo']
+    
+    # Sidebar
+    st.sidebar.title(f"Olá, {nome_na_planilha}!")
+    if st.sidebar.button("Sair / Logout"):
+        st.session_state['logado'] = False
+        st.session_state['usuario_atual'] = None
+        st.rerun()
+    
+    st.title("🩺 Acompanhamento de Estudos")
+    
+    # Carregar dados
+    gc = get_gspread_client()
+    if not gc: return
+    
+    sh = gc.open_by_url(PLANILHA_URL)
+    worksheet = sh.worksheet("Dados")
+    df = pd.DataFrame(worksheet.get_all_records())
+
+    # Verifica se a coluna do usuário existe no DF
+    if nome_na_planilha not in df.columns:
+        st.warning(f"Sua coluna de dados ('{nome_na_planilha}') ainda não foi sincronizada. Tente recarregar a página em alguns instantes.")
+        if st.button("Forçar Recarregamento"):
+            st.rerun()
+        return
+
+    # --- Lógica de Exibição das Matérias (Igual ao seu código original) ---
+    ordem_disciplinas = [
+        "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", 
+        "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", 
+        "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", 
+        "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"
+    ]
+    
+    if "Disciplina" in df.columns:
+        disciplinas_existentes = df['Disciplina'].unique()
+        # Ordenação
+        disciplinas_para_mostrar = [d for d in ordem_disciplinas if d in disciplinas_existentes]
+        extras = [d for d in disciplinas_existentes if d not in ordem_disciplinas]
+        disciplinas_para_mostrar.extend(extras)
+
+        for disciplina in disciplinas_para_mostrar:
+            df_disc = df[df['Disciplina'] == disciplina]
+            
+            # Cálculo de Progresso
+            coluna_usuario = df_disc[nome_na_planilha].astype(str).str.upper()
+            is_completed_series = coluna_usuario.apply(lambda x: True if x == 'TRUE' else False)
+            total_aulas = len(df_disc)
+            aulas_assistidas = is_completed_series.sum()
+            progresso = aulas_assistidas / total_aulas if total_aulas > 0 else 0
+            
+            texto_progresso = f"{int(progresso * 100)}% ({aulas_assistidas}/{total_aulas})"
+
+            with st.expander(f"**{disciplina}** - {texto_progresso}"):
+                st.progress(progresso)
+                
+                for idx, row in df_disc.iterrows():
+                    # Lógica do Checkbox
+                    valor_atual = row[nome_na_planilha]
+                    checked = str(valor_atual).upper() == 'TRUE'
+                    
+                    col1, col2 = st.columns([0.05, 0.95])
+                    with col1:
+                        key_check = f"chk_{idx}_{nome_na_planilha}"
+                        # Callback para salvar assim que clicar
+                        def salvar_alteracao(w=worksheet, r=idx, c=nome_na_planilha, k=key_check):
+                            novo_val = st.session_state[k]
+                            col_index = w.find(c).col
+                            gspread_row = r + 2
+                            w.update_cell(gspread_row, col_index, novo_val)
+                            st.toast("Salvo!", icon="✅")
+
+                        st.checkbox(
+                            "", 
+                            value=checked, 
+                            key=key_check, 
+                            on_change=salvar_alteracao
+                        )
+
+                    with col2:
+                        semana = row.get('Semana', '-')
+                        aula_nome = row.get('Aula', 'Sem nome')
+                        st.write(f"**S{semana}**: {aula_nome}")
+    else:
+        st.error("Coluna 'Disciplina' não encontrada na planilha 'Dados'.")
+
+# --- Controlador Principal ---
+if st.session_state['logado']:
+    tela_principal()
+else:
+    tela_login()
