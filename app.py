@@ -8,10 +8,11 @@ import time
 import base64
 from io import BytesIO
 from PIL import Image
-from streamlit_cropper import st_cropper # BIBLIOTECA NOVA
+from streamlit_cropper import st_cropper
+from datetime import datetime # IMPORT NOVO
 
 # --- Configuração da Página ---
-st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="centered")
+st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="wide")
 
 # --- Constantes ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
@@ -29,43 +30,20 @@ def get_gspread_client():
         st.error(f"Erro de credenciais: {e}")
         return None
 
-# --- Funções de Imagem (Novas) ---
-
+# --- Funções de Imagem ---
 def processar_imagem(img_pil):
-    """
-    Recebe uma imagem PIL (já recortada), redimensiona para 300x300 
-    e converte para string Base64 para salvar no Excel.
-    """
-    # 1. Redimensionar para no máximo 300x300 mantendo proporção (thumbnail)
-    # Como o recorte é 1:1, ela ficará 300x300 exatos ou menos.
     img_pil.thumbnail((300, 300))
-    
-    # 2. Salvar em buffer de memória como JPEG otimizado
     buffer = BytesIO()
-    img_pil.save(buffer, format="JPEG", quality=70) # Qualidade 70 para ficar leve
-    
-    # 3. Converter para Base64
-    img_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    return img_str
-
-def base64_to_image(base64_string):
-    """Converte string do Excel de volta para imagem"""
-    if not base64_string:
-        return None
-    try:
-        img_data = base64.b64decode(base64_string)
-        return Image.open(BytesIO(img_data))
-    except:
-        return None
+    img_pil.save(buffer, format="JPEG", quality=70)
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 # --- Funções de Segurança ---
-
 def validar_complexidade_senha(senha):
-    if len(senha) < 8: return False, "Senha deve ter min. 8 caracteres."
-    if not re.search(r"[a-z]", senha): return False, "Falta letra minúscula."
-    if not re.search(r"[A-Z]", senha): return False, "Falta letra maiúscula."
-    if not re.search(r"[0-9]", senha): return False, "Falta número."
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", senha): return False, "Falta caractere especial."
+    if len(senha) < 8: return False, "A senha deve ter pelo menos 8 caracteres."
+    if not re.search(r"[a-z]", senha): return False, "Precisa de letra minúscula."
+    if not re.search(r"[A-Z]", senha): return False, "Precisa de letra maiúscula."
+    if not re.search(r"[0-9]", senha): return False, "Precisa de número."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", senha): return False, "Precisa de caractere especial."
     return True, "Senha válida."
 
 def hash_senha(senha):
@@ -74,197 +52,206 @@ def hash_senha(senha):
 def verificar_senha(senha_input, senha_hash):
     return bcrypt.checkpw(senha_input.encode('utf-8'), senha_hash.encode('utf-8'))
 
-# --- Funções de Banco de Dados ---
+# --- Funções de Histórico (Suas funções adaptadas) ---
 
+def registrar_acesso(worksheet, df, username, disciplina):
+    """
+    Registra que o usuario mexeu na disciplina X agora.
+    Salva na coluna 'LastSeen' na linha 2.
+    """
+    if 'LastSeen' not in df.columns: 
+        return # Se não criou a coluna na planilha, ignora sem dar erro
+        
+    tag = str(username).upper() # Usa o username como TAG
+    agora = datetime.now().strftime("%d/%m/%Y_%H:%M")
+    novo_codigo = f"{tag}_{agora}_{disciplina.upper()}"
+    
+    # Pega o índice da coluna (gspread é base 1, df é base 0, mas precisamos somar 1)
+    col_idx = df.columns.get_loc('LastSeen') + 1
+    
+    # Lê o valor atual da célula (Linha 2 da planilha = índice 0 do DF)
+    valor_atual = str(df.iloc[0]['LastSeen']) if not df.empty else ""
+    
+    # Remove logs antigos DESSE usuário para não duplicar, mantendo os de outros
+    logs_existentes = [v for v in valor_atual.split(';') if v and not v.startswith(tag)]
+    
+    # Cria nova lista: [Novo Log] + [Logs de Outros]
+    historico = [novo_codigo] + logs_existentes
+    
+    # Limita tamanho total para não estourar a célula (opcional, 20 logs totais)
+    valor_final = ";".join(historico[:50]) 
+    
+    try: 
+        # Atualiza a célula na linha 2 (logo abaixo do cabeçalho)
+        worksheet.update_cell(2, col_idx, valor_final)
+    except Exception as e: 
+        print(f"Erro ao salvar log: {e}")
+
+def obter_ultima_disciplina(df, username):
+    """Lê onde o usuário parou pela última vez"""
+    if 'LastSeen' not in df.columns or df.empty: return None
+    
+    tag = str(username).upper()
+    logs = str(df.iloc[0]['LastSeen']).split(';')
+    
+    for log in logs:
+        if log.startswith(tag):
+            partes = log.split('_')
+            # Formato esperado: TAG_DATA_HORA_DISCIPLINA (4 partes)
+            if len(partes) >= 4: 
+                disciplina_raw = partes[3]
+                # Pequeno ajuste de formatação
+                return disciplina_raw.replace("OTORRINOLARINGOLOGIA", "Otorrino").title()
+    return None
+
+# --- Funções de Banco de Dados ---
 def buscar_usuario(username):
     gc = get_gspread_client()
-    sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet("Usuarios")
-    records = worksheet.get_all_records()
-    for user in records:
-        if user['username'] == username:
-            return user
+    if not gc: return None
+    try:
+        sh = gc.open_by_url(PLANILHA_URL)
+        worksheet = sh.worksheet("Usuarios")
+        records = worksheet.get_all_records()
+        for user in records:
+            if user['username'] == username:
+                return user
+    except: pass
     return None
 
 def criar_usuario(username, nome_completo, senha, foto_base64=""):
     gc = get_gspread_client()
     sh = gc.open_by_url(PLANILHA_URL)
+    try:
+        ws_users = sh.worksheet("Usuarios")
+    except: return False, "Aba Usuarios inexistente"
     
-    ws_users = sh.worksheet("Usuarios")
+    if ws_users.find(username): return False, "Usuário já existe."
     
-    if ws_users.find(username):
-        return False, "Nome de usuário já existe."
-    
-    senha_segura = hash_senha(senha)
-    # Adiciona a linha com a foto
-    ws_users.append_row([username, nome_completo, senha_segura, foto_base64])
+    ws_users.append_row([username, nome_completo, hash_senha(senha), foto_base64])
     
     try:
         ws_dados = sh.worksheet("Dados")
         headers = ws_dados.row_values(1)
         if nome_completo not in headers:
-            col_index = len(headers) + 1
-            ws_dados.update_cell(1, col_index, nome_completo)
-    except Exception as e:
-        return False, f"Erro ao criar coluna de dados: {e}"
+            ws_dados.update_cell(1, len(headers)+1, nome_completo)
+    except: pass
+    return True, "Sucesso"
 
-    return True, "Conta criada com sucesso!"
-
-# --- Lógica da Interface ---
-
-if 'logado' not in st.session_state:
-    st.session_state['logado'] = False
-if 'usuario_atual' not in st.session_state:
-    st.session_state['usuario_atual'] = None
-
+# --- Interface ---
 def tela_login():
-    st.title("🔐 MedTracker - Acesso")
-    
-    tab1, tab2 = st.tabs(["Entrar", "Criar Conta"])
-    
-    with tab1:
-        with st.form("login_form"):
-            user_input = st.text_input("Usuário")
-            pass_input = st.text_input("Senha", type="password")
-            submit_login = st.form_submit_button("Entrar")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<h1 style='text-align: center;'>🔐 MedTracker</h1>", unsafe_allow_html=True)
+        tab_entrar, tab_criar = st.tabs(["Entrar", "Criar Conta"])
+        
+        with tab_entrar:
+            with st.form("login"):
+                u = st.text_input("Usuário")
+                p = st.text_input("Senha", type="password")
+                if st.form_submit_button("Acessar", use_container_width=True):
+                    user_db = buscar_usuario(u)
+                    if user_db and verificar_senha(p, user_db['senha_hash']):
+                        st.session_state['logado'] = True
+                        st.session_state['usuario_atual'] = user_db
+                        st.rerun()
+                    else: st.error("Dados incorretos.")
+        
+        with tab_criar:
+            nu = st.text_input("Novo Usuário")
+            nn = st.text_input("Nome Completo")
+            np = st.text_input("Senha", type="password")
+            cp = st.text_input("Confirmar", type="password")
             
-            if submit_login:
-                usuario_db = buscar_usuario(user_input)
-                if usuario_db and verificar_senha(pass_input, usuario_db['senha_hash']):
-                    st.session_state['logado'] = True
-                    st.session_state['usuario_atual'] = usuario_db
-                    st.success("Login realizado!")
-                    time.sleep(1)
-                    st.rerun()
+            uploaded = st.file_uploader("Foto", type=['jpg','png'])
+            foto_b64 = ""
+            if uploaded:
+                img = st_cropper(Image.open(uploaded), aspect_ratio=(1,1), box_color='blue')
+                foto_b64 = processar_imagem(img)
+            
+            if st.button("Cadastrar", use_container_width=True):
+                valida, msg = validar_complexidade_senha(np)
+                if np != cp: st.error("Senhas diferem.")
+                elif not valida: st.error(msg)
                 else:
-                    st.error("Credenciais inválidas.")
-
-    with tab2:
-        st.markdown("### Cadastro")
-        
-        # Inputs de Texto
-        new_user = st.text_input("Usuário (Login)")
-        new_name = st.text_input("Nome Completo")
-        new_pass = st.text_input("Senha", type="password", help="Min 8 chars, Maiusc, Minusc, Num, Especial")
-        confirm_pass = st.text_input("Confirmar Senha", type="password")
-        
-        # --- Lógica de Upload e Crop da Imagem ---
-        st.markdown("---")
-        st.markdown("**Foto de Perfil (Opcional)**")
-        uploaded_file = st.file_uploader("Escolha uma imagem", type=['png', 'jpg', 'jpeg'])
-        foto_processada_b64 = ""
-
-        if uploaded_file:
-            st.info("Ajuste a caixa azul para recortar seu rosto:")
-            # Carrega a imagem original
-            img_original = Image.open(uploaded_file)
-            
-            # Chama o cortador. aspect_ratio=(1,1) força o quadrado
-            cropped_img = st_cropper(
-                img_original,
-                realtime_update=True,
-                box_color='blue',
-                aspect_ratio=(1, 1),
-                should_resize_image=True # Redimensiona visualização se for muito grande
-            )
-            
-            # Mostra o preview do resultado
-            st.write("Pré-visualização:")
-            st.image(cropped_img, width=150)
-            
-            # Processa a imagem cortada para salvar
-            foto_processada_b64 = processar_imagem(cropped_img)
-
-        st.markdown("---")
-        
-        if st.button("Criar Conta"):
-            if new_pass != confirm_pass:
-                st.error("Senhas não coincidem.")
-            else:
-                valida, msg = validar_complexidade_senha(new_pass)
-                if not valida:
-                    st.error(msg)
-                elif not new_user or not new_name:
-                    st.error("Preencha usuário e nome.")
-                else:
-                    with st.spinner("Criando perfil..."):
-                        sucesso, msg_retorno = criar_usuario(new_user, new_name, new_pass, foto_processada_b64)
-                        if sucesso:
-                            st.success(msg_retorno)
-                            st.info("Faça login na aba 'Entrar'.")
-                        else:
-                            st.error(msg_retorno)
+                    ok, m = criar_usuario(nu, nn, np, foto_b64)
+                    if ok: st.success(m); time.sleep(1); st.rerun()
+                    else: st.error(m)
 
 def tela_principal():
-    usuario = st.session_state['usuario_atual']
-    nome_na_planilha = usuario['nome_completo']
-    
-    # --- Sidebar com Foto ---
-    foto_str = usuario.get('foto', '')
-    if foto_str:
-        imagem_perfil = base64_to_image(foto_str)
-        if imagem_perfil:
-            # Mostra a imagem centralizada e arredondada (simulada pelo layout)
-            col_a, col_b, col_c = st.sidebar.columns([1,2,1])
-            with col_b:
-                st.image(imagem_perfil, width=130, caption=nome_na_planilha)
+    user_dic = st.session_state['usuario_atual']
+    nome = user_dic['nome_completo']
+    username = user_dic['username'] # Usaremos isso para o log
+    primeiro_nome = nome.split()[0].title()
+    foto = user_dic.get('foto', '')
+
+    # Sidebar
+    if foto:
+        st.sidebar.markdown(f"""
+            <style>
+                .p-img {{width: 140px; height: 140px; border-radius: 50%; object-fit: cover; border: 3px solid white; box-shadow: 0 5px 15px rgba(0,0,0,0.2);}}
+                .p-box {{display: flex; flex-direction: column; align-items: center; margin-bottom: 20px;}}
+            </style>
+            <div class="p-box"><img src="data:image/jpeg;base64,{foto}" class="p-img"><div style="margin-top:15px;font-weight:bold;font-size:22px;">Olá, {primeiro_nome}!</div></div>
+        """, unsafe_allow_html=True)
     else:
-        st.sidebar.header(f"Olá, {nome_na_planilha}!")
+        st.sidebar.markdown(f"<div style='text-align:center;font-size:80px;'>👤</div><h3 style='text-align:center'>Olá, {primeiro_nome}!</h3>", unsafe_allow_html=True)
     
-    if st.sidebar.button("Sair"):
-        st.session_state['logado'] = False
-        st.rerun()
-        
-    st.sidebar.markdown("---")
-    
-    # --- Resto do App (Matérias) ---
+    if st.sidebar.button("Sair", use_container_width=True):
+        st.session_state['logado'] = False; st.rerun()
+
     st.title("🩺 Acompanhamento de Estudos")
-    
+
     gc = get_gspread_client()
     if not gc: return
-    sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet("Dados")
-    df = pd.DataFrame(worksheet.get_all_records())
+    try:
+        sh = gc.open_by_url(PLANILHA_URL)
+        ws = sh.worksheet("Dados")
+        df = pd.DataFrame(ws.get_all_records())
+    except Exception as e: st.error(f"Erro planilha: {e}"); return
 
-    if nome_na_planilha not in df.columns:
-        st.warning("Sincronizando usuário... tente recarregar.")
-        return
+    if nome not in df.columns: st.warning("Atualizando dados..."); st.rerun(); return
 
-    # Filtros e Display (Mantido do seu código anterior)
-    ordem_disciplinas = [
-        "Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", 
-        "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", 
-        "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", 
-        "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"
-    ]
+    # --- MOSTRAR ÚLTIMO ACESSO ---
+    ultima_disc = obter_ultima_disciplina(df, username)
+    if ultima_disc:
+        st.info(f"📍 **Continue de onde parou:** Você interagiu recentemente com **{ultima_disc}**.")
+
+    ordem = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
     
     if "Disciplina" in df.columns:
-        disciplinas_existentes = df['Disciplina'].unique()
-        disciplinas_para_mostrar = [d for d in ordem_disciplinas if d in disciplinas_existentes]
-        extras = [d for d in disciplinas_existentes if d not in ordem_disciplinas]
-        disciplinas_para_mostrar.extend(extras)
-
-        for disciplina in disciplinas_para_mostrar:
-            df_disc = df[df['Disciplina'] == disciplina]
-            coluna_usuario = df_disc[nome_na_planilha].astype(str).str.upper()
-            is_completed_series = coluna_usuario.apply(lambda x: True if x == 'TRUE' else False)
-            total = len(df_disc)
-            assistidas = is_completed_series.sum()
-            progresso = assistidas / total if total > 0 else 0
+        discs = [d for d in ordem if d in df['Disciplina'].unique()]
+        extras = [d for d in df['Disciplina'].unique() if d not in ordem]
+        
+        for disc in discs + extras:
+            df_d = df[df['Disciplina'] == disc]
+            col_user = df_d[nome].astype(str).str.upper()
+            concluidos = col_user.apply(lambda x: True if x == 'TRUE' else False).sum()
+            total = len(df_d)
+            prog = concluidos/total if total > 0 else 0
             
-            with st.expander(f"**{disciplina}** - {int(progresso*100)}%"):
-                st.progress(progresso)
-                for idx, row in df_disc.iterrows():
-                    checked = str(row[nome_na_planilha]).upper() == 'TRUE'
-                    key_check = f"chk_{idx}_{nome_na_planilha}"
+            with st.expander(f"**{disc}** - {int(prog*100)}%"):
+                st.progress(prog)
+                for idx, row in df_d.iterrows():
+                    chk_val = str(row[nome]).upper() == 'TRUE'
+                    key = f"chk_{idx}_{nome}"
                     
-                    def salvar(w=worksheet, r=idx, c=nome_na_planilha, k=key_check):
-                        w.update_cell(r+2, w.find(c).col, st.session_state[k])
-                        
-                    st.checkbox("", value=checked, key=key_check, on_change=salvar)
+                    # Callback unificado: Salva valor E registra log
+                    def acao(w=ws, r=idx, c=nome, k=key, d=disc, u=username, full_df=df):
+                        # 1. Salvar o Checkbox
+                        novo = st.session_state[k]
+                        try:
+                            w.update_cell(r+2, w.find(c).col, novo)
+                            # 2. Registrar Log de Acesso (LastSeen)
+                            # Só registra se marcou como TRUE (opcional, ou pode registrar sempre que mexer)
+                            if novo: 
+                                registrar_acesso(w, full_df, u, d)
+                        except Exception as e: st.toast(f"Erro: {e}")
+
+                    st.checkbox("", value=chk_val, key=key, on_change=acao)
                     st.write(f"**S{row.get('Semana','-')}**: {row.get('Aula','')}")
 
-if st.session_state['logado']:
-    tela_principal()
-else:
-    tela_login()
+if 'logado' not in st.session_state: st.session_state['logado'] = False
+if 'usuario_atual' not in st.session_state: st.session_state['usuario_atual'] = None
+
+if st.session_state['logado']: tela_principal()
+else: tela_login()
