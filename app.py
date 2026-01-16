@@ -31,7 +31,18 @@ st.markdown(f"""
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }}
         
-        /* Margem superior de 40px */
+        /* Foto Grande na página de perfil */
+        .profile-big-img {{
+            width: 180px; height: 180px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 6px solid {COR_PRINCIPAL};
+            box-shadow: 0 6px 15px rgba(0,0,0,0.2);
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+        }}
+        
         .block-container {{ 
             padding-top: 40px !important; 
         }}
@@ -43,7 +54,6 @@ st.markdown(f"""
             font-weight: 800;
         }}
         
-        /* Estilo para a barra de progresso dentro do Expander */
         .stProgress > div > div > div > div {{
             background-color: {COR_PRINCIPAL};
         }}
@@ -88,7 +98,7 @@ def hash_senha(senha):
 def verificar_senha(senha_input, senha_hash):
     return bcrypt.checkpw(senha_input.encode('utf-8'), senha_hash.encode('utf-8'))
 
-# --- Funções de Banco de Dados ---
+# --- Funções de Banco de Dados (Leitura) ---
 
 def buscar_usuario(username):
     gc = get_gspread_client()
@@ -124,9 +134,45 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     
     return True, senha_segura
 
+# --- Funções de Atualização de Perfil (Escrita) ---
+
+def atualizar_nome_usuario(username, nome_antigo, novo_nome):
+    gc = get_gspread_client()
+    sh = gc.open_by_url(PLANILHA_URL)
+    ws_users = sh.worksheet("Usuarios")
+    
+    # Atualiza na aba Usuarios
+    cell = ws_users.find(username)
+    ws_users.update_cell(cell.row, 2, novo_nome) # Coluna 2 é Nome
+    
+    # Atualiza na aba Dados (renomeia a coluna)
+    try:
+        ws_dados = sh.worksheet("Dados")
+        cell_header = ws_dados.find(nome_antigo)
+        ws_dados.update_cell(cell_header.row, cell_header.col, novo_nome)
+    except:
+        pass # Se não achar a coluna, paciência
+        
+    return True
+
+def atualizar_foto_usuario(username, nova_foto_b64):
+    gc = get_gspread_client()
+    sh = gc.open_by_url(PLANILHA_URL)
+    ws_users = sh.worksheet("Usuarios")
+    cell = ws_users.find(username)
+    ws_users.update_cell(cell.row, 4, nova_foto_b64) # Coluna 4 é Foto
+    return True
+
+def atualizar_senha_usuario(username, nova_senha_hash):
+    gc = get_gspread_client()
+    sh = gc.open_by_url(PLANILHA_URL)
+    ws_users = sh.worksheet("Usuarios")
+    cell = ws_users.find(username)
+    ws_users.update_cell(cell.row, 3, nova_senha_hash) # Coluna 3 é Senha
+    return True
+
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
     try:
-        # +2 porque gspread é 1-indexed e tem header
         worksheet.update_cell(row_idx + 2, col_idx, novo_valor)
         if novo_valor:
             registrar_acesso(worksheet, df_completo, username, disciplina)
@@ -172,6 +218,10 @@ def ir_para_dashboard():
 def ir_para_disciplina(disciplina):
     st.session_state['pagina_atual'] = 'focus'
     st.session_state['disciplina_ativa'] = disciplina
+    st.rerun()
+    
+def ir_para_perfil():
+    st.session_state['pagina_atual'] = 'perfil'
     st.rerun()
 
 def realizar_logout():
@@ -247,6 +297,96 @@ def tela_login():
                         st.rerun()
                     else: st.error(resultado)
 
+def pagina_perfil():
+    user = st.session_state['usuario_atual']
+    cor = COR_PRINCIPAL
+    
+    cb, ct = st.columns([0.15, 0.85])
+    with cb:
+        if st.button("⬅ Voltar"): ir_para_dashboard()
+    with ct:
+        st.markdown(f"<h2 style='text-align:center; color:{cor}; margin:0;'>Meu Perfil</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Exibição dos Dados
+    foto_str = user.get('foto', '')
+    if foto_str:
+        src = f"data:image/jpeg;base64,{foto_str}"
+        st.markdown(f'<img src="{src}" class="profile-big-img">', unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="profile-big-img" style="background:#eee; display:flex; align-items:center; justify-content:center; font-size:80px; color:{cor};">👤</div>', unsafe_allow_html=True)
+    
+    st.markdown(f"<h3 style='text-align:center; margin-top:15px;'>{user['nome_completo']}</h3>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align:center; color:#666; margin-top:-10px;'>@{user['username']}</p>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # --- ÁREA DE EDIÇÃO ---
+    
+    # 1. Alterar Nome
+    with st.expander("📝 Alterar Nome Completo"):
+        novo_nome = st.text_input("Novo Nome", value=user['nome_completo'])
+        if st.button("Salvar Nome"):
+            if not novo_nome.strip():
+                st.error("Nome não pode ser vazio.")
+            else:
+                with st.spinner("Atualizando..."):
+                    atualizar_nome_usuario(user['username'], user['nome_completo'], novo_nome)
+                    # Atualiza Sessão
+                    st.session_state['usuario_atual']['nome_completo'] = novo_nome
+                    st.success("Nome atualizado com sucesso!")
+                    time.sleep(1)
+                    st.rerun()
+
+    # 2. Alterar Foto
+    with st.expander("📷 Alterar Foto"):
+        uploaded_new = st.file_uploader("Nova Foto", type=['jpg','png'], key='new_photo')
+        if uploaded_new:
+            st.write("Ajuste o recorte:")
+            img_new = st_cropper(
+                Image.open(uploaded_new), 
+                aspect_ratio=(1,1), 
+                box_color='#bf7000',
+                should_resize_image=True, 
+                width=350,
+                key='cropper_new'
+            )
+            if st.button("Salvar Foto"):
+                with st.spinner("Processando imagem..."):
+                    nova_b64 = processar_imagem(img_new)
+                    atualizar_foto_usuario(user['username'], nova_b64)
+                    st.session_state['usuario_atual']['foto'] = nova_b64
+                    st.success("Foto atualizada!")
+                    time.sleep(1)
+                    st.rerun()
+
+    # 3. Alterar Senha
+    with st.expander("🔐 Alterar Senha"):
+        senha_atual = st.text_input("Senha Atual", type="password")
+        nova_senha = st.text_input("Nova Senha", type="password")
+        conf_senha = st.text_input("Confirmar Nova Senha", type="password")
+        
+        if st.button("Atualizar Senha"):
+            # Verifica hash atual
+            if not verificar_senha(senha_atual, user['senha_hash']):
+                st.error("Senha atual incorreta.")
+            elif nova_senha != conf_senha:
+                st.error("As novas senhas não conferem.")
+            else:
+                val, msg = validar_complexidade_senha(nova_senha)
+                if not val:
+                    st.error(msg)
+                else:
+                    with st.spinner("Criptografando..."):
+                        novo_hash = hash_senha(nova_senha)
+                        atualizar_senha_usuario(user['username'], novo_hash)
+                        st.session_state['usuario_atual']['senha_hash'] = novo_hash
+                        st.success("Senha alterada com sucesso!")
+                        time.sleep(1)
+                        # Opcional: Deslogar para forçar login
+                        # realizar_logout() 
+
 def app_principal():
     gc = get_gspread_client()
     if not gc: return
@@ -257,14 +397,20 @@ def app_principal():
     user_data = st.session_state['usuario_atual']
     nome_coluna = user_data['nome_completo']
     username = user_data['username']
-    primeiro_nome = nome_coluna.split()[0].title()
-    foto_str = user_data.get('foto', '')
     
+    # Verifica se estamos na página de perfil
+    if st.session_state['pagina_atual'] == 'perfil':
+        pagina_perfil()
+        return
+
+    # Sincronização e Display Dashboard
     if nome_coluna not in df.columns:
         st.warning(f"Sincronizando '{nome_coluna}'... aguarde.")
         if st.button("Atualizar Página"): st.rerun()
         return
 
+    primeiro_nome = nome_coluna.split()[0].title()
+    foto_str = user_data.get('foto', '')
     cor = COR_PRINCIPAL
     glow_style = f"color: white; text-shadow: 0 0 10px {cor}cc, 0 0 5px {cor}80;"
     
@@ -295,6 +441,8 @@ def app_principal():
         with c_logout:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("Sair 🔒"): realizar_logout()
+            # NOVO BOTÃO PERFIL
+            if st.button("Perfil 👤"): ir_para_perfil()
 
         st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
         
@@ -330,7 +478,6 @@ def app_principal():
         ordem_pref = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
         todas = sorted(list(df['Disciplina'].unique()))
         
-        # INSERIR "Por Semana" no início da lista
         lista = ["Por Semana"] + [d for d in ordem_pref if d in todas] + [d for d in todas if d not in ordem_pref]
         
         cols = st.columns(2)
@@ -338,7 +485,6 @@ def app_principal():
             if not disc: continue
             with cols[i % 2]:
                 with st.container(border=True):
-                    # Se for "Por Semana", usamos o dataframe inteiro para cálculo
                     if disc == "Por Semana":
                         df_d = df
                         titulo_card = "📅 Por Semana"
@@ -371,58 +517,43 @@ def app_principal():
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # LOGICA PARA "POR SEMANA"
         if disc == "Por Semana":
-            # Pega todas as semanas disponíveis e ordena numericamente
             semanas_unicas = sorted([int(x) for x in df['Semana'].unique() if str(x).isdigit()])
-            
             for sem in semanas_unicas:
                 df_s = df[df['Semana'] == sem]
                 feitos_s = df_s[nome_coluna].apply(limpar_booleano).sum()
                 total_s = len(df_s)
                 pct_s = feitos_s / total_s if total_s > 0 else 0
                 
-                # Título do Accordion com Progresso
                 titulo_acc = f"Semana {sem} ({int(pct_s*100)}%)"
                 
                 with st.expander(titulo_acc):
-                    st.progress(pct_s) # Barra de progresso da semana
-                    
+                    st.progress(pct_s)
                     for idx, row in df_s.iterrows():
                         chk = limpar_booleano(row[nome_coluna])
                         ck, ct = st.columns([0.1, 0.9])
                         key = f"chk_{idx}_{nome_coluna}_sem"
-                        
                         with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
                         with ct:
-                            # REMOVIDO PREFIXO S{Semana}
                             txt = f"**{row['Disciplina']}**: {row.get('Aula','-')}"
                             if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
                             else: st.markdown(txt)
-                        
                         if novo != chk:
                             atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
                             time.sleep(0.5)
                             st.rerun()
-
-        # LOGICA PADRÃO (POR DISCIPLINA)
         else:
             df_d = df[df['Disciplina'] == disc]
             st.info(f"Concluídas: **{df_d[nome_coluna].apply(limpar_booleano).sum()}/{len(df_d)}**")
-            
             for idx, row in df_d.iterrows():
                 chk = limpar_booleano(row[nome_coluna])
                 ck, ct = st.columns([0.1, 0.9])
                 key = f"chk_{idx}_{nome_coluna}"
-                
                 with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
                 with ct:
-                    # REMOVIDO PREFIXO S{Semana}
-                    # Mostra apenas o nome da aula
                     txt = f"{row.get('Aula','-')}"
                     if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
                     else: st.markdown(txt)
-                
                 if novo != chk:
                     atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
                     time.sleep(0.5)
