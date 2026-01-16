@@ -16,12 +16,15 @@ st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="center
 
 # --- Constantes e CSS ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
-COR_PRINCIPAL = "#4A90E2" 
+
+# Nova cor principal (Laranja/Dourado)
+COR_PRINCIPAL = "#bf7000" 
 
 # CSS Personalizado
 st.markdown(f"""
     <style>
         .stButton>button {{ width: 100%; }}
+        
         /* Estilo da foto no topo do Dashboard */
         .profile-header-img {{
             width: 120px; height: 120px;
@@ -30,8 +33,17 @@ st.markdown(f"""
             border: 4px solid {COR_PRINCIPAL};
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }}
+        
         /* Remove padding excessivo do topo */
         .block-container {{ padding-top: 2rem; }}
+
+        /* Classe para o Texto em Degradê */
+        .text-gradient {{
+            background: linear-gradient(to top right, #bf7000, #bf4a00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
+        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -97,7 +109,6 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     
     if ws_users.find(username): return False, "Usuário já existe."
     
-    # Hash da senha para salvar seguro
     senha_segura = hash_senha(senha)
     ws_users.append_row([username, nome_completo, senha_segura, foto_base64])
     
@@ -108,7 +119,6 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
             ws_dados.update_cell(1, len(headers)+1, nome_completo)
     except: pass
     
-    # Retorna o hash também para podermos logar automaticamente
     return True, senha_segura
 
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
@@ -172,7 +182,14 @@ def tela_login():
     st.markdown("<br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<h1 style='text-align: center; color: #4A90E2;'>🔐 MedTracker</h1>", unsafe_allow_html=True)
+        # Título com Degradê e novo Ícone
+        st.markdown(
+            "<h1 style='text-align: center; margin-bottom: 0;'>"
+            "🩺 <span class='text-gradient'>MedTracker</span>"
+            "</h1>", 
+            unsafe_allow_html=True
+        )
+        st.markdown("<p style='text-align: center; color: #666; margin-top: -10px;'>Seu companheiro de residência</p>", unsafe_allow_html=True)
         
         tab1, tab2 = st.tabs(["Entrar", "Criar Conta"])
         
@@ -200,12 +217,11 @@ def tela_login():
             uploaded = st.file_uploader("Foto de Perfil", type=['jpg','png'])
             foto_b64 = ""
             if uploaded:
-                st.write("Ajuste o recorte (arraste a caixa azul):")
-                # CORREÇÃO DA IMAGEM: Width fixo para não vazar da coluna
+                st.write("Ajuste o recorte:")
                 img = st_cropper(
                     Image.open(uploaded), 
                     aspect_ratio=(1,1), 
-                    box_color='blue', 
+                    box_color='#bf7000', # Caixa laranja também
                     should_resize_image=True, 
                     width=350 
                 )
@@ -219,15 +235,12 @@ def tela_login():
                     status, resultado = criar_usuario(nu, nn, np, foto_b64)
                     if status:
                         st.success("Conta criada! Entrando...")
-                        # COOLDOWN DE 300ms
                         time.sleep(0.3)
                         
-                        # LOGIN AUTOMÁTICO
-                        # Montamos o objeto do usuário manualmente pois acabamos de criá-lo
                         novo_user_session = {
                             'username': nu,
                             'nome_completo': nn,
-                            'senha_hash': resultado, # O criar_usuario agora retorna o hash gerado
+                            'senha_hash': resultado, 
                             'foto': foto_b64
                         }
                         st.session_state['usuario_atual'] = novo_user_session
@@ -265,7 +278,7 @@ def app_principal():
                 src = f"data:image/jpeg;base64,{foto_str}"
                 img_html = f'<img src="{src}" class="profile-header-img">'
             else:
-                img_html = f'<div class="profile-header-img" style="background:#eee; display:flex; align-items:center; justify-content:center; font-size:40px;">👤</div>'
+                img_html = f'<div class="profile-header-img" style="background:#eee; display:flex; align-items:center; justify-content:center; font-size:40px; color:{cor};">👤</div>'
 
             st.markdown(f'''
                 <div style="display: flex; align-items: center; gap: 20px;">
@@ -324,7 +337,10 @@ def app_principal():
                     df_d = df[df['Disciplina'] == disc]
                     feitos = df_d[nome_coluna].apply(limpar_booleano).sum()
                     pct_d = feitos / len(df_d) if len(df_d) > 0 else 0
+                    
+                    # Estilo atualizado com a nova cor
                     style = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
+                    
                     st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{disc}</h4>", unsafe_allow_html=True)
                     st.progress(pct_d)
                     ct, cb = st.columns([0.6, 0.4])
