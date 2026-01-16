@@ -31,7 +31,6 @@ st.markdown(f"""
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }}
         
-        /* Foto Grande na página de perfil */
         .profile-big-img {{
             width: 180px; height: 180px;
             border-radius: 50%;
@@ -43,7 +42,6 @@ st.markdown(f"""
             margin-right: auto;
         }}
         
-        /* Margem superior de 40px em todas as páginas */
         .block-container {{ 
             padding-top: 40px !important; 
         }}
@@ -55,7 +53,6 @@ st.markdown(f"""
             font-weight: 800;
         }}
         
-        /* Estilo para a barra de progresso dentro do Expander */
         .stProgress > div > div > div > div {{
             background-color: {COR_PRINCIPAL};
         }}
@@ -81,10 +78,21 @@ def limpar_booleano(valor):
     return str(valor).upper() == 'TRUE'
 
 def processar_imagem(img_pil):
+    # Garante que a imagem final salva seja leve (300x300)
     img_pil.thumbnail((300, 300))
     buffer = BytesIO()
     img_pil.save(buffer, format="JPEG", quality=70)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+def preparar_imagem_para_crop(uploaded_file):
+    """Redimensiona a imagem carregada para caber na tela do cropper"""
+    image = Image.open(uploaded_file)
+    # Define uma largura máxima para visualização (ex: 400px)
+    largura_base = 400
+    w_percent = (largura_base / float(image.size[0]))
+    h_size = int((float(image.size[1]) * float(w_percent)))
+    # Retorna imagem redimensionada proporcionalmente
+    return image.resize((largura_base, h_size))
 
 def validar_complexidade_senha(senha):
     if len(senha) < 8: return False, "Mínimo 8 caracteres."
@@ -100,7 +108,7 @@ def hash_senha(senha):
 def verificar_senha(senha_input, senha_hash):
     return bcrypt.checkpw(senha_input.encode('utf-8'), senha_hash.encode('utf-8'))
 
-# --- Funções de Banco de Dados (Leitura) ---
+# --- Funções de Banco de Dados ---
 
 def buscar_usuario(username):
     gc = get_gspread_client()
@@ -136,25 +144,17 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     
     return True, senha_segura
 
-# --- Funções de Atualização de Perfil (Escrita) ---
-
 def atualizar_nome_usuario(username, nome_antigo, novo_nome):
     gc = get_gspread_client()
     sh = gc.open_by_url(PLANILHA_URL)
     ws_users = sh.worksheet("Usuarios")
-    
-    # Atualiza na aba Usuarios
     cell = ws_users.find(username)
-    ws_users.update_cell(cell.row, 2, novo_nome) # Coluna 2 é Nome
-    
-    # Atualiza na aba Dados (renomeia a coluna)
+    ws_users.update_cell(cell.row, 2, novo_nome)
     try:
         ws_dados = sh.worksheet("Dados")
         cell_header = ws_dados.find(nome_antigo)
         ws_dados.update_cell(cell_header.row, cell_header.col, novo_nome)
-    except:
-        pass 
-        
+    except: pass
     return True
 
 def atualizar_foto_usuario(username, nova_foto_b64):
@@ -162,7 +162,7 @@ def atualizar_foto_usuario(username, nova_foto_b64):
     sh = gc.open_by_url(PLANILHA_URL)
     ws_users = sh.worksheet("Usuarios")
     cell = ws_users.find(username)
-    ws_users.update_cell(cell.row, 4, nova_foto_b64) # Coluna 4 é Foto
+    ws_users.update_cell(cell.row, 4, nova_foto_b64)
     return True
 
 def atualizar_senha_usuario(username, nova_senha_hash):
@@ -170,7 +170,7 @@ def atualizar_senha_usuario(username, nova_senha_hash):
     sh = gc.open_by_url(PLANILHA_URL)
     ws_users = sh.worksheet("Usuarios")
     cell = ws_users.find(username)
-    ws_users.update_cell(cell.row, 3, nova_senha_hash) # Coluna 3 é Senha
+    ws_users.update_cell(cell.row, 3, nova_senha_hash)
     return True
 
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
@@ -180,8 +180,6 @@ def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, discipli
             registrar_acesso(worksheet, df_completo, username, disciplina)
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
-
-# --- Funções de Histórico ---
 
 def registrar_acesso(worksheet, df, username, disciplina):
     if 'LastSeen' not in df.columns: return
@@ -270,15 +268,16 @@ def tela_login():
             foto_b64 = ""
             if uploaded:
                 st.write("Ajuste o recorte:")
-                # CORREÇÃO ST_CROPPER: Usando colunas para controle de tamanho visual
+                # Prepara imagem reduzida para caber na tela
+                img_to_crop = preparar_imagem_para_crop(uploaded)
+                
                 c_crop_log, _ = st.columns([0.8, 0.2])
                 with c_crop_log:
                     img = st_cropper(
-                        Image.open(uploaded), 
+                        img_to_crop, # Usa a imagem redimensionada
                         aspect_ratio=(1,1), 
                         box_color='#bf7000',
                         key="cropper_signup"
-                        # Removido width/should_resize_image para evitar erros
                     )
                 foto_b64 = processar_imagem(img)
             
@@ -329,7 +328,6 @@ def pagina_perfil():
     
     # --- ÁREA DE EDIÇÃO ---
     
-    # 1. Alterar Nome
     with st.expander("📝 Alterar Nome Completo"):
         novo_nome = st.text_input("Novo Nome", value=user['nome_completo'])
         if st.button("Salvar Nome"):
@@ -343,20 +341,20 @@ def pagina_perfil():
                     time.sleep(1)
                     st.rerun()
 
-    # 2. Alterar Foto
     with st.expander("📷 Alterar Foto"):
         uploaded_new = st.file_uploader("Nova Foto", type=['jpg','png'], key='new_photo')
         if uploaded_new:
             st.write("Ajuste o recorte:")
-            # CORREÇÃO ST_CROPPER
+            # Prepara imagem reduzida para caber na tela
+            img_to_crop = preparar_imagem_para_crop(uploaded_new)
+
             c_crop, _ = st.columns([0.6, 0.4]) 
             with c_crop:
                 img_new = st_cropper(
-                    Image.open(uploaded_new), 
+                    img_to_crop, # Usa a imagem redimensionada
                     aspect_ratio=(1,1), 
                     box_color='#bf7000',
                     key='cropper_new'
-                    # Removido width/should_resize_image
                 )
             
             if st.button("Salvar Foto"):
@@ -368,7 +366,6 @@ def pagina_perfil():
                     time.sleep(1)
                     st.rerun()
 
-    # 3. Alterar Senha
     with st.expander("🔐 Alterar Senha"):
         senha_atual = st.text_input("Senha Atual", type="password")
         nova_senha = st.text_input("Nova Senha", type="password")
@@ -402,7 +399,6 @@ def app_principal():
     nome_coluna = user_data['nome_completo']
     username = user_data['username']
     
-    # Roteamento para página de perfil
     if st.session_state['pagina_atual'] == 'perfil':
         pagina_perfil()
         return
@@ -420,7 +416,6 @@ def app_principal():
     try: col_idx_gs = worksheet.find(nome_coluna).col
     except: st.error("Erro: Coluna do usuário não encontrada."); return
 
-    # === DASHBOARD ===
     if st.session_state['pagina_atual'] == 'dashboard':
         c_head, c_logout = st.columns([0.8, 0.2])
         with c_head:
@@ -448,7 +443,6 @@ def app_principal():
 
         st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
         
-        # Último acesso
         ultima_disc = obter_ultima_disciplina(df, username)
         if ultima_disc:
             validas = [d for d in df['Disciplina'].unique() if d]
@@ -459,7 +453,6 @@ def app_principal():
                     ir_para_disciplina(match)
                 st.markdown("<br>", unsafe_allow_html=True)
 
-        # Progresso Total
         col = df[nome_coluna].apply(limpar_booleano)
         total_aulas = len(df)
         pct = col.sum() / total_aulas if total_aulas > 0 else 0
@@ -475,7 +468,6 @@ def app_principal():
         ''', unsafe_allow_html=True)
         st.progress(pct)
 
-        # Cards Disciplinas
         st.markdown("### 📚 Suas Disciplinas")
         ordem_pref = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
         todas = sorted(list(df['Disciplina'].unique()))
@@ -505,7 +497,6 @@ def app_principal():
                     ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_d)})")
                     if cb.button("Abrir ➝", key=f"b_{disc}"): ir_para_disciplina(disc)
 
-    # === MODO FOCO ===
     elif st.session_state['pagina_atual'] == 'focus':
         disc = st.session_state['disciplina_ativa']
         glow = f"color: white; text-shadow: 0 0 12px {cor}, 0 0 6px {cor}80;"
