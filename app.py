@@ -16,8 +16,6 @@ st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="center
 
 # --- Constantes e CSS ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
-
-# Cor principal (Laranja/Dourado)
 COR_PRINCIPAL = "#bf7000" 
 
 # CSS Personalizado
@@ -25,7 +23,6 @@ st.markdown(f"""
     <style>
         .stButton>button {{ width: 100%; }}
         
-        /* Estilo da foto no topo do Dashboard */
         .profile-header-img {{
             width: 120px; height: 120px;
             border-radius: 50%;
@@ -34,17 +31,21 @@ st.markdown(f"""
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }}
         
-        /* AJUSTE SOLICITADO: Margem superior de 40px em todas as páginas */
+        /* Margem superior de 40px */
         .block-container {{ 
             padding-top: 40px !important; 
         }}
 
-        /* Classe para o Texto em Degradê */
         .text-gradient {{
             background: linear-gradient(to top right, #bf7000, #bf4a00);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-weight: 800;
+        }}
+        
+        /* Estilo para a barra de progresso dentro do Expander */
+        .stProgress > div > div > div > div {{
+            background-color: {COR_PRINCIPAL};
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -125,6 +126,7 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
 
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
     try:
+        # +2 porque gspread é 1-indexed e tem header
         worksheet.update_cell(row_idx + 2, col_idx, novo_valor)
         if novo_valor:
             registrar_acesso(worksheet, df_completo, username, disciplina)
@@ -183,19 +185,16 @@ def realizar_logout():
 def tela_login():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # AJUSTE DE ESPAÇAMENTO: Margem negativa no H1 e no P para aproximar
         st.markdown(
             "<h1 style='text-align: center; margin-bottom: -15px; line-height: 1.2;'>"
             "🩺 <span class='text-gradient'>MedTracker</span>"
             "</h1>", 
             unsafe_allow_html=True
         )
-        # TEXTO ALTERADO
         st.markdown("<p style='text-align: center; color: #666; margin-top: 0px;'>Gestor de estudos para medicina</p>", unsafe_allow_html=True)
         
         tab1, tab2 = st.tabs(["Entrar", "Criar Conta"])
         
-        # --- TAB ENTRAR ---
         with tab1:
             with st.form("login"):
                 u = st.text_input("Usuário")
@@ -208,7 +207,6 @@ def tela_login():
                         st.rerun()
                     else: st.error("Erro no login.")
         
-        # --- TAB CRIAR CONTA ---
         with tab2:
             st.info("Preencha os dados abaixo:")
             nu = st.text_input("Usuário (Login)")
@@ -238,7 +236,6 @@ def tela_login():
                     if status:
                         st.success("Conta criada! Entrando...")
                         time.sleep(0.3)
-                        
                         novo_user_session = {
                             'username': nu,
                             'nome_completo': nn,
@@ -270,6 +267,9 @@ def app_principal():
 
     cor = COR_PRINCIPAL
     glow_style = f"color: white; text-shadow: 0 0 10px {cor}cc, 0 0 5px {cor}80;"
+    
+    try: col_idx_gs = worksheet.find(nome_coluna).col
+    except: st.error("Erro: Coluna do usuário não encontrada."); return
 
     # === DASHBOARD ===
     if st.session_state['pagina_atual'] == 'dashboard':
@@ -329,20 +329,29 @@ def app_principal():
         st.markdown("### 📚 Suas Disciplinas")
         ordem_pref = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
         todas = sorted(list(df['Disciplina'].unique()))
-        lista = [d for d in ordem_pref if d in todas] + [d for d in todas if d not in ordem_pref]
+        
+        # INSERIR "Por Semana" no início da lista
+        lista = ["Por Semana"] + [d for d in ordem_pref if d in todas] + [d for d in todas if d not in ordem_pref]
         
         cols = st.columns(2)
         for i, disc in enumerate(lista):
             if not disc: continue
             with cols[i % 2]:
                 with st.container(border=True):
-                    df_d = df[df['Disciplina'] == disc]
+                    # Se for "Por Semana", usamos o dataframe inteiro para cálculo
+                    if disc == "Por Semana":
+                        df_d = df
+                        titulo_card = "📅 Por Semana"
+                    else:
+                        df_d = df[df['Disciplina'] == disc]
+                        titulo_card = disc
+
                     feitos = df_d[nome_coluna].apply(limpar_booleano).sum()
                     pct_d = feitos / len(df_d) if len(df_d) > 0 else 0
                     
                     style = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
                     
-                    st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{disc}</h4>", unsafe_allow_html=True)
+                    st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{titulo_card}</h4>", unsafe_allow_html=True)
                     st.progress(pct_d)
                     ct, cb = st.columns([0.6, 0.4])
                     ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_d)})")
@@ -357,31 +366,67 @@ def app_principal():
         with cb:
             if st.button("⬅ Voltar"): ir_para_dashboard()
         with ct:
-            st.markdown(f"<h2 style='background: {cor}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>📖 {disc}</h2>", unsafe_allow_html=True)
+            titulo_header = "📅 Visão Semanal" if disc == "Por Semana" else f"📖 {disc}"
+            st.markdown(f"<h2 style='background: {cor}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>{titulo_header}</h2>", unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        df_d = df[df['Disciplina'] == disc]
         
-        try: col_idx_gs = worksheet.find(nome_coluna).col
-        except: st.error("Erro na planilha"); return
+        # LOGICA PARA "POR SEMANA"
+        if disc == "Por Semana":
+            # Pega todas as semanas disponíveis e ordena numericamente
+            semanas_unicas = sorted([int(x) for x in df['Semana'].unique() if str(x).isdigit()])
+            
+            for sem in semanas_unicas:
+                df_s = df[df['Semana'] == sem]
+                feitos_s = df_s[nome_coluna].apply(limpar_booleano).sum()
+                total_s = len(df_s)
+                pct_s = feitos_s / total_s if total_s > 0 else 0
+                
+                # Título do Accordion com Progresso
+                titulo_acc = f"Semana {sem} ({int(pct_s*100)}%)"
+                
+                with st.expander(titulo_acc):
+                    st.progress(pct_s) # Barra de progresso da semana
+                    
+                    for idx, row in df_s.iterrows():
+                        chk = limpar_booleano(row[nome_coluna])
+                        ck, ct = st.columns([0.1, 0.9])
+                        key = f"chk_{idx}_{nome_coluna}_sem"
+                        
+                        with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
+                        with ct:
+                            # REMOVIDO PREFIXO S{Semana}
+                            txt = f"**{row['Disciplina']}**: {row.get('Aula','-')}"
+                            if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+                            else: st.markdown(txt)
+                        
+                        if novo != chk:
+                            atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
+                            time.sleep(0.5)
+                            st.rerun()
 
-        st.info(f"Concluídas: **{df_d[nome_coluna].apply(limpar_booleano).sum()}/{len(df_d)}**")
-        
-        for idx, row in df_d.iterrows():
-            chk = limpar_booleano(row[nome_coluna])
-            ck, ct = st.columns([0.1, 0.9])
-            key = f"chk_{idx}_{nome_coluna}"
+        # LOGICA PADRÃO (POR DISCIPLINA)
+        else:
+            df_d = df[df['Disciplina'] == disc]
+            st.info(f"Concluídas: **{df_d[nome_coluna].apply(limpar_booleano).sum()}/{len(df_d)}**")
             
-            with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
-            with ct:
-                txt = f"**S{row.get('Semana','-')}**: {row.get('Aula','-')}"
-                if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-                else: st.markdown(txt)
-            
-            if novo != chk:
-                atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
-                time.sleep(0.5)
-                st.rerun()
+            for idx, row in df_d.iterrows():
+                chk = limpar_booleano(row[nome_coluna])
+                ck, ct = st.columns([0.1, 0.9])
+                key = f"chk_{idx}_{nome_coluna}"
+                
+                with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
+                with ct:
+                    # REMOVIDO PREFIXO S{Semana}
+                    # Mostra apenas o nome da aula
+                    txt = f"{row.get('Aula','-')}"
+                    if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
+                    else: st.markdown(txt)
+                
+                if novo != chk:
+                    atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
+                    time.sleep(0.5)
+                    st.rerun()
 
 if st.session_state['logado']: app_principal()
 else: tela_login()
