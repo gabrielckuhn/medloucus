@@ -43,6 +43,7 @@ st.markdown(f"""
             margin-right: auto;
         }}
         
+        /* Margem superior de 40px em todas as páginas */
         .block-container {{ 
             padding-top: 40px !important; 
         }}
@@ -54,6 +55,7 @@ st.markdown(f"""
             font-weight: 800;
         }}
         
+        /* Estilo para a barra de progresso dentro do Expander */
         .stProgress > div > div > div > div {{
             background-color: {COR_PRINCIPAL};
         }}
@@ -151,7 +153,7 @@ def atualizar_nome_usuario(username, nome_antigo, novo_nome):
         cell_header = ws_dados.find(nome_antigo)
         ws_dados.update_cell(cell_header.row, cell_header.col, novo_nome)
     except:
-        pass # Se não achar a coluna, paciência
+        pass 
         
     return True
 
@@ -268,13 +270,16 @@ def tela_login():
             foto_b64 = ""
             if uploaded:
                 st.write("Ajuste o recorte:")
-                img = st_cropper(
-                    Image.open(uploaded), 
-                    aspect_ratio=(1,1), 
-                    box_color='#bf7000',
-                    should_resize_image=True, 
-                    width=350 
-                )
+                # CORREÇÃO ST_CROPPER: Usando colunas para controle de tamanho visual
+                c_crop_log, _ = st.columns([0.8, 0.2])
+                with c_crop_log:
+                    img = st_cropper(
+                        Image.open(uploaded), 
+                        aspect_ratio=(1,1), 
+                        box_color='#bf7000',
+                        key="cropper_signup"
+                        # Removido width/should_resize_image para evitar erros
+                    )
                 foto_b64 = processar_imagem(img)
             
             if st.button("Cadastrar", use_container_width=True):
@@ -333,7 +338,6 @@ def pagina_perfil():
             else:
                 with st.spinner("Atualizando..."):
                     atualizar_nome_usuario(user['username'], user['nome_completo'], novo_nome)
-                    # Atualiza Sessão
                     st.session_state['usuario_atual']['nome_completo'] = novo_nome
                     st.success("Nome atualizado com sucesso!")
                     time.sleep(1)
@@ -344,14 +348,17 @@ def pagina_perfil():
         uploaded_new = st.file_uploader("Nova Foto", type=['jpg','png'], key='new_photo')
         if uploaded_new:
             st.write("Ajuste o recorte:")
-            img_new = st_cropper(
-                Image.open(uploaded_new), 
-                aspect_ratio=(1,1), 
-                box_color='#bf7000',
-                should_resize_image=True, 
-                width=350,
-                key='cropper_new'
-            )
+            # CORREÇÃO ST_CROPPER
+            c_crop, _ = st.columns([0.6, 0.4]) 
+            with c_crop:
+                img_new = st_cropper(
+                    Image.open(uploaded_new), 
+                    aspect_ratio=(1,1), 
+                    box_color='#bf7000',
+                    key='cropper_new'
+                    # Removido width/should_resize_image
+                )
+            
             if st.button("Salvar Foto"):
                 with st.spinner("Processando imagem..."):
                     nova_b64 = processar_imagem(img_new)
@@ -368,7 +375,6 @@ def pagina_perfil():
         conf_senha = st.text_input("Confirmar Nova Senha", type="password")
         
         if st.button("Atualizar Senha"):
-            # Verifica hash atual
             if not verificar_senha(senha_atual, user['senha_hash']):
                 st.error("Senha atual incorreta.")
             elif nova_senha != conf_senha:
@@ -384,8 +390,6 @@ def pagina_perfil():
                         st.session_state['usuario_atual']['senha_hash'] = novo_hash
                         st.success("Senha alterada com sucesso!")
                         time.sleep(1)
-                        # Opcional: Deslogar para forçar login
-                        # realizar_logout() 
 
 def app_principal():
     gc = get_gspread_client()
@@ -398,12 +402,11 @@ def app_principal():
     nome_coluna = user_data['nome_completo']
     username = user_data['username']
     
-    # Verifica se estamos na página de perfil
+    # Roteamento para página de perfil
     if st.session_state['pagina_atual'] == 'perfil':
         pagina_perfil()
         return
 
-    # Sincronização e Display Dashboard
     if nome_coluna not in df.columns:
         st.warning(f"Sincronizando '{nome_coluna}'... aguarde.")
         if st.button("Atualizar Página"): st.rerun()
@@ -441,7 +444,6 @@ def app_principal():
         with c_logout:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("Sair 🔒"): realizar_logout()
-            # NOVO BOTÃO PERFIL
             if st.button("Perfil 👤"): ir_para_perfil()
 
         st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
