@@ -11,25 +11,25 @@ from PIL import Image
 from streamlit_cropper import st_cropper
 from datetime import datetime, timedelta
 import plotly.express as px
-import plotly.graph_objects as go
 import numpy as np
 
-# --- Configuração da Página ---
-st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="centered")
+# --- Configuração da Página (MedTracker Beta) ---
+st.set_page_config(page_title="MedTracker Beta", page_icon="🩺", layout="centered")
 
 # --- Constantes e CSS ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
 WORKSHEET_NAME = "novas_aulas" 
-COR_PRINCIPAL = "#bf7000" 
+COR_PRINCIPAL = "#bf7000" # Laranja padrão (apenas para fallback)
 
-# Mapeamento de Cores
+# Mapeamento de Cores por Grande Área
 CORES_AREAS = {
-    "Clínica Médica": "#ade082",
-    "Ginecologia": "#e082c6",
-    "Pediatria": "#f1ee90",
-    "Preventiva": "#90d3f1",
-    "Cirurgia": "#f1a790"
+    "Clínica Médica": "#ade082", # Verde
+    "Ginecologia": "#e082c6",    # Rosa
+    "Pediatria": "#f1ee90",      # Amarelo
+    "Preventiva": "#90d3f1",     # Azul
+    "Cirurgia": "#f1a790"        # Laranja claro
 }
+
 # Cores de UI
 COR_TEXTO_ATIVO = "white"
 COR_TEXTO_INATIVO = "#444444"
@@ -58,7 +58,6 @@ st.markdown(f"""
             margin-right: auto;
         }}
         
-        /* Margem superior de 40px */
         .block-container {{ 
             padding-top: 40px !important; 
         }}
@@ -70,11 +69,6 @@ st.markdown(f"""
             font-weight: 800;
         }}
         
-        /* Cor padrão da barra de progresso */
-        .stProgress > div > div > div > div {{
-            background-color: {COR_PRINCIPAL};
-        }}
-
         .metric-card {{
             background-color: #f9f9f9;
             border: 1px solid #eee;
@@ -153,6 +147,40 @@ def buscar_usuario(username):
     except: pass
     return None
 
+def sincronizar_colunas_usuarios():
+    """
+    Verifica se todos os usuários cadastrados na aba 'Usuarios' 
+    possuem uma coluna correspondente (pelo username) na aba 'novas_aulas'.
+    Se não tiver, cria.
+    """
+    gc = get_gspread_client()
+    if not gc: return False
+    
+    sh = gc.open_by_url(PLANILHA_URL)
+    
+    try:
+        ws_users = sh.worksheet("Usuarios")
+        users_records = ws_users.get_all_records()
+        lista_usernames = [u['username'] for u in users_records if u['username']]
+        
+        ws_aulas = sh.worksheet(WORKSHEET_NAME)
+        headers_aulas = ws_aulas.row_values(1)
+        
+        cols_adicionadas = False
+        
+        for user in lista_usernames:
+            if user not in headers_aulas:
+                # Adiciona coluna nova
+                next_col = len(headers_aulas) + 1
+                ws_aulas.update_cell(1, next_col, user)
+                headers_aulas.append(user) # Atualiza lista local
+                cols_adicionadas = True
+                
+        return cols_adicionadas
+    except Exception as e:
+        st.error(f"Erro na sincronização de colunas: {e}")
+        return False
+
 def criar_usuario(username, nome_completo, senha, foto_base64=""):
     gc = get_gspread_client()
     sh = gc.open_by_url(PLANILHA_URL)
@@ -165,27 +193,25 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     senha_segura = hash_senha(senha)
     ws_users.append_row([username, nome_completo, senha_segura, foto_base64])
     
+    # Cria coluna na aba de aulas imediatamente usando o USERNAME
     try:
         ws_dados = sh.worksheet(WORKSHEET_NAME)
         headers = ws_dados.row_values(1)
-        if nome_completo not in headers:
-            ws_dados.update_cell(1, len(headers)+1, nome_completo)
+        if username not in headers:
+            ws_dados.update_cell(1, len(headers)+1, username)
     except Exception as e:
         return False, f"Erro ao criar coluna de dados: {e}"
     
     return True, senha_segura
 
-def atualizar_nome_usuario(username, nome_antigo, novo_nome):
+def atualizar_nome_usuario(username, novo_nome):
+    # Apenas atualiza o nome de exibição na aba Usuarios
+    # A coluna de dados continua sendo o username (imutável)
     gc = get_gspread_client()
     sh = gc.open_by_url(PLANILHA_URL)
     ws_users = sh.worksheet("Usuarios")
     cell = ws_users.find(username)
     ws_users.update_cell(cell.row, 2, novo_nome)
-    try:
-        ws_dados = sh.worksheet(WORKSHEET_NAME)
-        cell_header = ws_dados.find(nome_antigo)
-        ws_dados.update_cell(cell_header.row, cell_header.col, novo_nome)
-    except: pass
     return True
 
 def atualizar_foto_usuario(username, nova_foto_b64):
@@ -233,10 +259,6 @@ def registrar_acesso(worksheet, df, username, disciplina, row_idx):
         print(f"Erro log: {e}")
 
 def obter_dados_ultima_interacao(df, username):
-    """
-    Retorna uma tupla (especialidade, grande_area) baseada no registro mais recente.
-    Resolve o problema de disciplinas com mesmo nome em áreas diferentes.
-    """
     if 'LastSeen' not in df.columns or df.empty: return None, None
     tag = str(username).upper()
     
@@ -244,7 +266,6 @@ def obter_dados_ultima_interacao(df, username):
     ultima_esp = None
     ultima_area = None
     
-    # Itera sobre todas as linhas para verificar logs individuais
     for idx, row in df.iterrows():
         val = str(row['LastSeen'])
         if tag in val:
@@ -256,8 +277,6 @@ def obter_dados_ultima_interacao(df, username):
                         if len(dados) >= 4:
                             data_str = f"{dados[1]}_{dados[2]}"
                             data_obj = datetime.strptime(data_str, "%d/%m/%Y_%H:%M")
-                            
-                            # Se for a data mais recente encontrada até agora
                             if ultima_data is None or data_obj > ultima_data:
                                 ultima_data = data_obj
                                 ultima_esp = row['especialidade']
@@ -334,7 +353,7 @@ def extrair_horas_gerais(df):
 
 if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = 'home'
 if 'disciplina_ativa' not in st.session_state: st.session_state['disciplina_ativa'] = None
-if 'area_ativa' not in st.session_state: st.session_state['area_ativa'] = None # NOVA VARIÁVEL DE ESTADO
+if 'area_ativa' not in st.session_state: st.session_state['area_ativa'] = None 
 if 'logado' not in st.session_state: st.session_state['logado'] = False
 if 'usuario_atual' not in st.session_state: st.session_state['usuario_atual'] = None
 
@@ -346,7 +365,6 @@ def ir_para_home():
     st.session_state['pagina_atual'] = 'home'
     st.rerun()
 
-# ATUALIZADO: Recebe agora a área também
 def ir_para_disciplina(disciplina, area):
     st.session_state['pagina_atual'] = 'focus'
     st.session_state['disciplina_ativa'] = disciplina
@@ -394,7 +412,7 @@ def tela_login():
         with tab2:
             st.info("Preencha os dados abaixo:")
             nu = st.text_input("Usuário (Login)")
-            nn = st.text_input("Nome Completo (Coluna da Planilha)")
+            nn = st.text_input("Nome Completo (Apenas Exibição)")
             np = st.text_input("Senha", type="password")
             cp = st.text_input("Confirmar Senha", type="password")
             
@@ -428,6 +446,10 @@ def tela_login():
                     else: st.error(resultado)
 
 def pagina_inicial():
+    # --- AUTO-RECUPERAÇÃO DE COLUNAS ---
+    # Se você apagou as colunas no Sheets, isso vai recriar baseada nos usuarios
+    sincronizar_colunas_usuarios()
+
     gc = get_gspread_client()
     if not gc: return
     sh = gc.open_by_url(PLANILHA_URL)
@@ -438,23 +460,18 @@ def pagina_inicial():
         df['grande_area'] = df['grande_area'].astype(str).str.strip()
 
     user = st.session_state['usuario_atual']
-    nome_coluna = user['nome_completo']
-    primeiro_nome = nome_coluna.split()[0].title()
+    username = user['username'] # CHAVE PRINCIPAL AGORA
+    nome_exibicao = user['nome_completo']
+    primeiro_nome = nome_exibicao.split()[0].title()
     foto_str = user.get('foto', '')
     cor = COR_PRINCIPAL
     
-    if nome_coluna not in df.columns:
-        st.info(f"🆕 Sincronizando cadastro antigo na nova planilha... Aguarde.")
-        try:
-            headers = worksheet.row_values(1)
-            next_col = len(headers) + 1
-            worksheet.update_cell(1, next_col, nome_coluna)
-            st.success("Sincronizado! Recarregando...")
-            time.sleep(1)
+    if username not in df.columns:
+        st.warning(f"Coluna do usuário '{username}' não encontrada. Tente recarregar.")
+        if st.button("Recarregar"):
+            sincronizar_colunas_usuarios()
             st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao sincronizar usuário: {e}")
-            return
+        return
 
     # --- CABEÇALHO ---
     c_head, c_btn = st.columns([0.7, 0.3])
@@ -484,7 +501,7 @@ def pagina_inicial():
     st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
 
     # --- PROGRESSO GERAL ---
-    col = df[nome_coluna].apply(limpar_booleano)
+    col = df[username].apply(limpar_booleano) # Usa username
     total_aulas = len(df)
     pct = col.sum() / total_aulas if total_aulas > 0 else 0
     
@@ -510,7 +527,7 @@ def pagina_inicial():
     
     with col1:
         st.markdown("**🕸️ Radar de Especialidades**")
-        df_radar = df.groupby("especialidade")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
+        df_radar = df.groupby("especialidade")[username].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
         df_radar.columns = ['Especialidade', 'Score']
         df_radar = df_radar.sort_values('Score', ascending=False).head(6)
         
@@ -523,9 +540,9 @@ def pagina_inicial():
         st.markdown("**📅 Velocidade Semanal**")
         df['SemanaInt'] = pd.to_numeric(df['semana_media'], errors='coerce')
         df_sem = df.dropna(subset=['SemanaInt'])
-        df_line = df_sem.groupby("SemanaInt")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
+        df_line = df_sem.groupby("SemanaInt")[username].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
         
-        fig2 = px.line(df_line, x='SemanaInt', y=nome_coluna, markers=True)
+        fig2 = px.line(df_line, x='SemanaInt', y=username, markers=True)
         fig2.update_traces(line_color=cor, line_width=3)
         fig2.update_layout(
             xaxis_title="Semana", yaxis_title="% Conclusão",
@@ -535,7 +552,7 @@ def pagina_inicial():
         st.plotly_chart(fig2, use_container_width=True)
     
     st.markdown("**🔥 Consistência (Streak)**")
-    dias_seguidos = calcular_streak(df, user['username'])
+    dias_seguidos = calcular_streak(df, username)
     st.markdown(f"""
         <div class="metric-card">
             <h2 style="margin:0; color:{cor}; font-size: 40px;">{dias_seguidos} Dias</h2>
@@ -569,10 +586,10 @@ def pagina_inicial():
         st.markdown("**🏆 Top Alunos (Ranking)**")
         txt_ranking = ""
         for i, (u_col, score) in enumerate(ranking_sorted[:5]):
-            nome_exibicao = "Você" if u_col == nome_coluna else codinomes[i % len(codinomes)]
+            nome_exibicao = "Você" if u_col == username else codinomes[i % len(codinomes)]
             medalha = "🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else f"{i+1}º"
-            peso = "bold" if u_col == nome_coluna else "normal"
-            cor_txt = cor if u_col == nome_coluna else "#333"
+            peso = "bold" if u_col == username else "normal"
+            cor_txt = cor if u_col == username else "#333"
             txt_ranking += f"<div style='margin-bottom:8px; font-weight:{peso}; color:{cor_txt}'>{medalha} {nome_exibicao}: <b>{score}</b> aulas</div>"
         
         st.markdown(f"<div class='metric-card' style='text-align:left;'>{txt_ranking}</div>", unsafe_allow_html=True)
@@ -580,7 +597,7 @@ def pagina_inicial():
     with c_glob2:
         st.markdown("**👥 Média da Turma**")
         media_turma = int(sum(scores_globais.values()) / len(scores_globais)) if scores_globais else 0
-        meu_score = scores_globais.get(nome_coluna, 0)
+        meu_score = scores_globais.get(username, 0)
         
         delta = meu_score - media_turma
         cor_delta = "green" if delta >= 0 else "red"
@@ -612,6 +629,7 @@ def pagina_inicial():
 def pagina_perfil():
     user = st.session_state['usuario_atual']
     cor = COR_PRINCIPAL
+    username = user['username']
     
     cb, ct = st.columns([0.15, 0.85])
     with cb:
@@ -629,15 +647,15 @@ def pagina_perfil():
         st.markdown(f'<div class="profile-big-img" style="background:#eee; display:flex; align-items:center; justify-content:center; font-size:80px; color:{cor};">👤</div>', unsafe_allow_html=True)
     
     st.markdown(f"<h3 style='text-align:center; margin-top:15px;'>{user['nome_completo']}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<p style='text-align:center; color:#666; margin-top:-10px;'>@{user['username']}</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='text-align:center; color:#666; margin-top:-10px;'>@{username}</p>", unsafe_allow_html=True)
     st.markdown("---")
     
-    with st.expander("📝 Alterar Nome Completo"):
+    with st.expander("📝 Alterar Nome de Exibição"):
         novo_nome = st.text_input("Novo Nome", value=user['nome_completo'])
         if st.button("Salvar Nome"):
             if not novo_nome.strip(): st.error("Nome vazio.")
             else:
-                atualizar_nome_usuario(user['username'], user['nome_completo'], novo_nome)
+                atualizar_nome_usuario(username, novo_nome)
                 st.session_state['usuario_atual']['nome_completo'] = novo_nome
                 st.success("Atualizado!")
                 time.sleep(1)
@@ -653,7 +671,7 @@ def pagina_perfil():
                 img_new = st_cropper(img_to_crop, aspect_ratio=(1,1), box_color='#bf7000', key='cropper_new')
             if st.button("Salvar Foto"):
                 nova_b64 = processar_imagem(img_new)
-                atualizar_foto_usuario(user['username'], nova_b64)
+                atualizar_foto_usuario(username, nova_b64)
                 st.session_state['usuario_atual']['foto'] = nova_b64
                 st.success("Foto atualizada!")
                 time.sleep(1)
@@ -671,12 +689,15 @@ def pagina_perfil():
                 if not val: st.error(msg)
                 else:
                     novo_hash = hash_senha(nova_senha)
-                    atualizar_senha_usuario(user['username'], novo_hash)
+                    atualizar_senha_usuario(username, novo_hash)
                     st.session_state['usuario_atual']['senha_hash'] = novo_hash
                     st.success("Senha alterada!")
                     time.sleep(1)
 
 def pagina_dashboard():
+    # --- AUTO-RECUPERAÇÃO DE COLUNAS ---
+    sincronizar_colunas_usuarios()
+
     gc = get_gspread_client()
     if not gc: return
     sh = gc.open_by_url(PLANILHA_URL)
@@ -687,15 +708,13 @@ def pagina_dashboard():
         df['grande_area'] = df['grande_area'].astype(str).str.strip()
     
     user_data = st.session_state['usuario_atual']
-    nome_coluna = user_data['nome_completo']
-    username = user_data['username']
+    nome_exibicao = user_data['nome_completo']
+    username = user_data['username'] # USAR USERNAME
     
-    if nome_coluna not in df.columns:
-        st.info(f"🆕 Sincronizando cadastro antigo na nova planilha... Aguarde.")
+    if username not in df.columns:
+        st.info(f"🆕 Criando coluna para o usuário '{username}'... Aguarde.")
         try:
-            headers = worksheet.row_values(1)
-            next_col = len(headers) + 1
-            worksheet.update_cell(1, next_col, nome_coluna)
+            sincronizar_colunas_usuarios()
             st.success("Sincronizado! Recarregando...")
             time.sleep(1)
             st.rerun()
@@ -703,12 +722,12 @@ def pagina_dashboard():
             st.error(f"Erro ao sincronizar usuário: {e}")
             return
 
-    primeiro_nome = nome_coluna.split()[0].title()
+    primeiro_nome = nome_exibicao.split()[0].title()
     foto_str = user_data.get('foto', '')
     cor = COR_PRINCIPAL
     
-    try: col_idx_gs = worksheet.find(nome_coluna).col
-    except: st.error("Erro: Coluna do usuário não encontrada."); return
+    try: col_idx_gs = worksheet.find(username).col
+    except: st.error("Erro: Coluna do usuário não encontrada na planilha."); return
 
     # --- Header Dashboard ---
     c_head, c_logout = st.columns([0.8, 0.2])
@@ -742,7 +761,6 @@ def pagina_dashboard():
     ult_esp, ult_area = obter_dados_ultima_interacao(df, username)
     
     if ult_esp and ult_area:
-        # Verifica se essa combinação ainda existe no DF atual
         match = df[(df['especialidade'] == ult_esp) & (df['grande_area'] == ult_area)]
         if not match.empty:
             st.markdown(f"**📍 Continuar de onde parou:**")
@@ -750,7 +768,7 @@ def pagina_dashboard():
                 ir_para_disciplina(ult_esp, ult_area)
             st.markdown("<br>", unsafe_allow_html=True)
 
-    col = df[nome_coluna].apply(limpar_booleano)
+    col = df[username].apply(limpar_booleano) # Usa username
     total_aulas = len(df)
     pct = col.sum() / total_aulas if total_aulas > 0 else 0
     st.progress(pct)
@@ -773,35 +791,27 @@ def pagina_dashboard():
     else:
         df_filtrado = df.copy()
 
-    # Cards únicos baseados em (Especialidade + Grande Área)
     df_cards = df_filtrado.drop_duplicates(subset=['especialidade', 'grande_area'])
     df_cards = df_cards.sort_values(by=['grande_area', 'especialidade'])
     
-    # Lista de tuplas para iteração
     lista_cards = list(zip(df_cards['especialidade'], df_cards['grande_area']))
     
     cols = st.columns(2)
     for i, (especialidade, grande_area_card) in enumerate(lista_cards):
         if not especialidade: continue
         
-        # FILTRO EXATO: Especialidade + Grande Área
         df_esp = df[(df['especialidade'] == especialidade) & (df['grande_area'] == grande_area_card)]
         
         if df_esp.empty: continue
         
-        # Cálculos
-        feitos = df_esp[nome_coluna].apply(limpar_booleano).sum()
+        feitos = df_esp[username].apply(limpar_booleano).sum() # Usa username
         pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
         
-        # Cor de Fundo da Área (usada para ativo ou detalhe do inativo)
         cor_area = CORES_AREAS.get(grande_area_card, COR_PRINCIPAL)
 
-        # Lógica Visual Modificada
         if pct_d > 0:
-            # ATIVO: Fundo colorido, texto branco
             style = f"background: {cor_area}; padding: 5px 10px; border-radius: 5px; color: {COR_TEXTO_ATIVO}; text-shadow: 0 0 10px {cor_area}cc;"
         else:
-            # INATIVO: Fundo transparente, texto cinza escuro, borda esquerda colorida para identificar a área
             style = f"background: transparent; padding: 5px 10px; padding-left: 10px; border-left: 5px solid {cor_area}; color: {COR_TEXTO_INATIVO};"
 
         with cols[i % 2]:
@@ -813,7 +823,6 @@ def pagina_dashboard():
                 ct, cb = st.columns([0.6, 0.4])
                 ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_esp)})")
                 
-                # Chave única para o botão
                 if cb.button("Abrir ➝", key=f"b_{especialidade}_{grande_area_card}"): 
                     ir_para_disciplina(especialidade, grande_area_card)
 
@@ -832,28 +841,24 @@ def pagina_focus():
     df['original_row_idx'] = df.index 
     
     user = st.session_state['usuario_atual']
-    nome_coluna = user['nome_completo']
-    username = user['username']
+    username = user['username'] # CHAVE PRINCIPAL
     
-    try: col_idx_gs = worksheet.find(nome_coluna).col
+    try: col_idx_gs = worksheet.find(username).col
     except: return
 
-    # Recupera AMBOS do session state
     especialidade_ativa = st.session_state.get('disciplina_ativa')
     area_ativa = st.session_state.get('area_ativa')
 
-    # Filtra usando AMBOS os critérios
     if area_ativa:
         df_active = df[(df['especialidade'] == especialidade_ativa) & (df['grande_area'] == area_ativa)].copy()
     else:
-        # Fallback caso algo dê errado no state (não deve acontecer com o novo fluxo)
         df_active = df[df['especialidade'] == especialidade_ativa].copy()
     
-    # Define cores baseado na área ativa
     grande_area = area_ativa if area_ativa else (df_active.iloc[0]['grande_area'] if not df_active.empty else "Geral")
     cor_area = CORES_AREAS.get(grande_area.strip(), COR_PRINCIPAL)
     glow = f"color: white; text-shadow: 0 0 12px {cor_area}, 0 0 6px {cor_area}80;"
 
+    # --- INJEÇÃO DE CSS: Cores da Barra de Progresso ---
     st.markdown(f"""
         <style>
         .stProgress > div > div > div > div {{
@@ -871,7 +876,7 @@ def pagina_focus():
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    feitos_esp = df_active[nome_coluna].apply(limpar_booleano).sum()
+    feitos_esp = df_active[username].apply(limpar_booleano).sum() # Usa username
     pct_esp = feitos_esp / len(df_active) if len(df_active) > 0 else 0
     st.progress(pct_esp)
     st.caption(f"Progresso: {int(pct_esp*100)}% concluído")
@@ -887,17 +892,17 @@ def pagina_focus():
         qtd_aulas = len(df_tema)
         
         if qtd_aulas > 1:
-            aulas_feitas_tema = df_tema[nome_coluna].apply(limpar_booleano).sum()
+            aulas_feitas_tema = df_tema[username].apply(limpar_booleano).sum() # Usa username
             pct_tema = int((aulas_feitas_tema / qtd_aulas) * 100)
             icon_check = "✅" if pct_tema == 100 else ""
             
             with st.expander(f"{tema} ({pct_tema}%) {icon_check}"):
                 for idx, row in df_tema.iterrows():
-                    chk = limpar_booleano(row[nome_coluna])
+                    chk = limpar_booleano(row[username]) # Usa username
                     original_idx = row['original_row_idx']
                     
                     c_chk, c_txt = st.columns([0.1, 0.9])
-                    key = f"chk_{original_idx}_{nome_coluna}"
+                    key = f"chk_{original_idx}_{username}"
                     
                     with c_chk:
                         novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
@@ -912,11 +917,11 @@ def pagina_focus():
                         st.rerun()
         else:
             row = df_tema.iloc[0]
-            chk = limpar_booleano(row[nome_coluna])
+            chk = limpar_booleano(row[username]) # Usa username
             original_idx = row['original_row_idx']
             
             c_chk, c_txt = st.columns([0.1, 0.9])
-            key = f"chk_{original_idx}_{nome_coluna}"
+            key = f"chk_{original_idx}_{username}"
             
             with c_chk:
                 novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
