@@ -82,7 +82,7 @@ st.markdown(f"""
         
         h2, h3 {{ color: #333; }}
         
-        /* Ajuste para expanders ficarem bonitos no modo foco - CHAVES DUPLAS CORRIGIDAS AQUI */
+        /* Ajuste para expanders ficarem bonitos no modo foco */
         .streamlit-expanderHeader {{
             font-weight: bold;
             color: #333;
@@ -431,8 +431,21 @@ def pagina_inicial():
     cor = COR_PRINCIPAL
     
     if nome_coluna not in df.columns:
-        st.warning(f"Usuário não encontrado na planilha {WORKSHEET_NAME}.")
-        return
+        # --- AUTO CORREÇÃO PARA USUÁRIOS ANTIGOS ---
+        st.info(f"🆕 Sincronizando cadastro antigo na nova planilha... Aguarde.")
+        try:
+            # Pega os cabeçalhos atuais
+            headers = worksheet.row_values(1)
+            # Define a próxima coluna livre
+            next_col = len(headers) + 1
+            # Atualiza a célula do cabeçalho
+            worksheet.update_cell(1, next_col, nome_coluna)
+            st.success("Sincronizado! Recarregando...")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao sincronizar usuário: {e}")
+            return
 
     # --- CABEÇALHO ---
     c_head, c_btn = st.columns([0.7, 0.3])
@@ -692,9 +705,18 @@ def pagina_dashboard():
     username = user_data['username']
     
     if nome_coluna not in df.columns:
-        st.warning(f"Sincronizando '{nome_coluna}'... aguarde.")
-        if st.button("Atualizar Página"): st.rerun()
-        return
+        # --- AUTO CORREÇÃO PARA USUÁRIOS ANTIGOS ---
+        st.info(f"🆕 Sincronizando cadastro antigo na nova planilha... Aguarde.")
+        try:
+            headers = worksheet.row_values(1)
+            next_col = len(headers) + 1
+            worksheet.update_cell(1, next_col, nome_coluna)
+            st.success("Sincronizado! Recarregando...")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Erro ao sincronizar usuário: {e}")
+            return
 
     primeiro_nome = nome_coluna.split()[0].title()
     foto_str = user_data.get('foto', '')
