@@ -21,13 +21,20 @@ PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnI
 WORKSHEET_NAME = "novas_aulas" 
 COR_PRINCIPAL = "#bf7000" # Laranja padrão (apenas para fallback)
 
-# Mapeamento de Cores por Grande Área
+# Mapeamento de Cores por Grande Área (Incluindo Siglas)
 CORES_AREAS = {
-    "Clínica Médica": "#ade082", # Verde
-    "Ginecologia": "#e082c6",    # Rosa
-    "Pediatria": "#f1ee90",      # Amarelo
-    "Preventiva": "#90d3f1",     # Azul
-    "Cirurgia": "#f1a790"        # Laranja claro
+    # Nomes Completos
+    "Clínica Médica": "#ade082", 
+    "Ginecologia": "#e082c6",    
+    "Pediatria": "#f1ee90",      
+    "Preventiva": "#90d3f1",     
+    "Cirurgia": "#f1a790",
+    # Siglas (Para garantir que pegue a cor correta)
+    "CLM": "#ade082",
+    "GO": "#e082c6",
+    "PED": "#f1ee90",
+    "PREV": "#90d3f1",
+    "CIR": "#f1a790"
 }
 
 # Cores de UI
@@ -148,11 +155,6 @@ def buscar_usuario(username):
     return None
 
 def sincronizar_colunas_usuarios():
-    """
-    Verifica se todos os usuários cadastrados na aba 'Usuarios' 
-    possuem uma coluna correspondente (pelo username) na aba 'novas_aulas'.
-    Se não tiver, cria.
-    """
     gc = get_gspread_client()
     if not gc: return False
     
@@ -170,10 +172,9 @@ def sincronizar_colunas_usuarios():
         
         for user in lista_usernames:
             if user not in headers_aulas:
-                # Adiciona coluna nova
                 next_col = len(headers_aulas) + 1
                 ws_aulas.update_cell(1, next_col, user)
-                headers_aulas.append(user) # Atualiza lista local
+                headers_aulas.append(user) 
                 cols_adicionadas = True
                 
         return cols_adicionadas
@@ -193,7 +194,6 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     senha_segura = hash_senha(senha)
     ws_users.append_row([username, nome_completo, senha_segura, foto_base64])
     
-    # Cria coluna na aba de aulas imediatamente usando o USERNAME
     try:
         ws_dados = sh.worksheet(WORKSHEET_NAME)
         headers = ws_dados.row_values(1)
@@ -205,8 +205,6 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     return True, senha_segura
 
 def atualizar_nome_usuario(username, novo_nome):
-    # Apenas atualiza o nome de exibição na aba Usuarios
-    # A coluna de dados continua sendo o username (imutável)
     gc = get_gspread_client()
     sh = gc.open_by_url(PLANILHA_URL)
     ws_users = sh.worksheet("Usuarios")
@@ -446,8 +444,6 @@ def tela_login():
                     else: st.error(resultado)
 
 def pagina_inicial():
-    # --- AUTO-RECUPERAÇÃO DE COLUNAS ---
-    # Se você apagou as colunas no Sheets, isso vai recriar baseada nos usuarios
     sincronizar_colunas_usuarios()
 
     gc = get_gspread_client()
@@ -460,7 +456,7 @@ def pagina_inicial():
         df['grande_area'] = df['grande_area'].astype(str).str.strip()
 
     user = st.session_state['usuario_atual']
-    username = user['username'] # CHAVE PRINCIPAL AGORA
+    username = user['username'] 
     nome_exibicao = user['nome_completo']
     primeiro_nome = nome_exibicao.split()[0].title()
     foto_str = user.get('foto', '')
@@ -501,7 +497,7 @@ def pagina_inicial():
     st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
 
     # --- PROGRESSO GERAL ---
-    col = df[username].apply(limpar_booleano) # Usa username
+    col = df[username].apply(limpar_booleano) 
     total_aulas = len(df)
     pct = col.sum() / total_aulas if total_aulas > 0 else 0
     
@@ -709,7 +705,7 @@ def pagina_dashboard():
     
     user_data = st.session_state['usuario_atual']
     nome_exibicao = user_data['nome_completo']
-    username = user_data['username'] # USAR USERNAME
+    username = user_data['username'] 
     
     if username not in df.columns:
         st.info(f"🆕 Criando coluna para o usuário '{username}'... Aguarde.")
@@ -807,7 +803,9 @@ def pagina_dashboard():
         feitos = df_esp[username].apply(limpar_booleano).sum() # Usa username
         pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
         
-        cor_area = CORES_AREAS.get(grande_area_card, COR_PRINCIPAL)
+        # Recupera a cor segura
+        grande_area_key = grande_area_card.strip()
+        cor_area = CORES_AREAS.get(grande_area_key, COR_PRINCIPAL)
 
         if pct_d > 0:
             style = f"background: {cor_area}; padding: 5px 10px; border-radius: 5px; color: {COR_TEXTO_ATIVO}; text-shadow: 0 0 10px {cor_area}cc;"
@@ -818,7 +816,15 @@ def pagina_dashboard():
             with st.container(border=True):
                 st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{especialidade}</h4>", unsafe_allow_html=True)
                 st.caption(f"{grande_area_card}")
-                st.progress(pct_d)
+                
+                # --- SUBSTITUIÇÃO DA BARRA DE PROGRESSO POR HTML ---
+                # Isso garante a cor correta em todos os cards
+                cor_barra = cor_area 
+                st.markdown(f"""
+                    <div style="background-color: #eee; border-radius: 10px; height: 8px; width: 100%;">
+                        <div style="background-color: {cor_barra}; width: {pct_d*100}%; height: 100%; border-radius: 10px;"></div>
+                    </div>
+                """, unsafe_allow_html=True)
                 
                 ct, cb = st.columns([0.6, 0.4])
                 ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_esp)})")
@@ -841,7 +847,7 @@ def pagina_focus():
     df['original_row_idx'] = df.index 
     
     user = st.session_state['usuario_atual']
-    username = user['username'] # CHAVE PRINCIPAL
+    username = user['username'] 
     
     try: col_idx_gs = worksheet.find(username).col
     except: return
@@ -876,7 +882,7 @@ def pagina_focus():
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    feitos_esp = df_active[username].apply(limpar_booleano).sum() # Usa username
+    feitos_esp = df_active[username].apply(limpar_booleano).sum() 
     pct_esp = feitos_esp / len(df_active) if len(df_active) > 0 else 0
     st.progress(pct_esp)
     st.caption(f"Progresso: {int(pct_esp*100)}% concluído")
@@ -892,13 +898,13 @@ def pagina_focus():
         qtd_aulas = len(df_tema)
         
         if qtd_aulas > 1:
-            aulas_feitas_tema = df_tema[username].apply(limpar_booleano).sum() # Usa username
+            aulas_feitas_tema = df_tema[username].apply(limpar_booleano).sum()
             pct_tema = int((aulas_feitas_tema / qtd_aulas) * 100)
             icon_check = "✅" if pct_tema == 100 else ""
             
             with st.expander(f"{tema} ({pct_tema}%) {icon_check}"):
                 for idx, row in df_tema.iterrows():
-                    chk = limpar_booleano(row[username]) # Usa username
+                    chk = limpar_booleano(row[username]) 
                     original_idx = row['original_row_idx']
                     
                     c_chk, c_txt = st.columns([0.1, 0.9])
@@ -917,7 +923,7 @@ def pagina_focus():
                         st.rerun()
         else:
             row = df_tema.iloc[0]
-            chk = limpar_booleano(row[username]) # Usa username
+            chk = limpar_booleano(row[username]) 
             original_idx = row['original_row_idx']
             
             c_chk, c_txt = st.columns([0.1, 0.9])
