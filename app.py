@@ -21,7 +21,7 @@ PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnI
 WORKSHEET_NAME = "novas_aulas" 
 COR_PRINCIPAL = "#bf7000" # Laranja padrão (apenas para fallback)
 
-# Mapeamento de Cores por Grande Área (Incluindo Siglas)
+# Mapeamento de Cores por Grande Área
 CORES_AREAS = {
     # Nomes Completos
     "Clínica Médica": "#ade082", 
@@ -29,7 +29,7 @@ CORES_AREAS = {
     "Pediatria": "#f1ee90",      
     "Preventiva": "#90d3f1",     
     "Cirurgia": "#f1a790",
-    # Siglas (Para garantir que pegue a cor correta)
+    # Siglas
     "CLM": "#ade082",
     "GO": "#e082c6",
     "PED": "#f1ee90",
@@ -41,7 +41,7 @@ CORES_AREAS = {
 COR_TEXTO_ATIVO = "white"
 COR_TEXTO_INATIVO = "#444444"
 
-# CSS Personalizado
+# CSS Personalizado Global
 st.markdown(f"""
     <style>
         .stButton>button {{ width: 100%; border-radius: 8px; font-weight: 600; }}
@@ -107,6 +107,32 @@ def get_gspread_client():
         st.error(f"Erro de credenciais: {e}")
         return None
 
+# --- NOVA FUNÇÃO: Conexão Resiliente (Resolve o erro APIError) ---
+def conectar_planilha_com_retry(nome_aba=None):
+    """
+    Tenta conectar à planilha com tentativas repetidas (Retry) 
+    para evitar queda por API Limit.
+    """
+    gc = get_gspread_client()
+    if not gc: return None, None
+    
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            sh = gc.open_by_url(PLANILHA_URL)
+            if nome_aba:
+                worksheet = sh.worksheet(nome_aba)
+                return sh, worksheet
+            return sh, None
+        except Exception as e:
+            # Se for a última tentativa, falha
+            if i == max_retries - 1:
+                st.error(f"Erro de conexão com o Google (Muitos acessos). Aguarde um instante. Detalhe: {e}")
+                return None, None
+            # Espera exponencial: 2s, 4s...
+            time.sleep(2 ** (i + 1))
+    return None, None
+
 # --- Funções Auxiliares ---
 
 def limpar_booleano(valor):
@@ -142,12 +168,12 @@ def verificar_senha(senha_input, senha_hash):
 # --- Funções de Banco de Dados e Lógica ---
 
 def buscar_usuario(username):
-    gc = get_gspread_client()
-    if not gc: return None
+    # Usa a função resiliente para abrir
+    sh, ws_users = conectar_planilha_com_retry("Usuarios")
+    if not ws_users: return None
+    
     try:
-        sh = gc.open_by_url(PLANILHA_URL)
-        worksheet = sh.worksheet("Usuarios")
-        records = worksheet.get_all_records()
+        records = ws_users.get_all_records()
         for user in records:
             if user['username'] == username:
                 return user
@@ -155,10 +181,9 @@ def buscar_usuario(username):
     return None
 
 def sincronizar_colunas_usuarios():
-    gc = get_gspread_client()
-    if not gc: return False
-    
-    sh = gc.open_by_url(PLANILHA_URL)
+    # Conexão resiliente manual
+    sh, _ = conectar_planilha_com_retry()
+    if not sh: return False
     
     try:
         ws_users = sh.worksheet("Usuarios")
@@ -183,12 +208,9 @@ def sincronizar_colunas_usuarios():
         return False
 
 def criar_usuario(username, nome_completo, senha, foto_base64=""):
-    gc = get_gspread_client()
-    sh = gc.open_by_url(PLANILHA_URL)
-    try:
-        ws_users = sh.worksheet("Usuarios")
-    except: return False, "Erro na aba Usuarios"
-    
+    sh, ws_users = conectar_planilha_com_retry("Usuarios")
+    if not ws_users: return False, "Erro conexão"
+
     if ws_users.find(username): return False, "Usuário já existe."
     
     senha_segura = hash_senha(senha)
@@ -205,25 +227,22 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     return True, senha_segura
 
 def atualizar_nome_usuario(username, novo_nome):
-    gc = get_gspread_client()
-    sh = gc.open_by_url(PLANILHA_URL)
-    ws_users = sh.worksheet("Usuarios")
+    sh, ws_users = conectar_planilha_com_retry("Usuarios")
+    if not ws_users: return False
     cell = ws_users.find(username)
     ws_users.update_cell(cell.row, 2, novo_nome)
     return True
 
 def atualizar_foto_usuario(username, nova_foto_b64):
-    gc = get_gspread_client()
-    sh = gc.open_by_url(PLANILHA_URL)
-    ws_users = sh.worksheet("Usuarios")
+    sh, ws_users = conectar_planilha_com_retry("Usuarios")
+    if not ws_users: return False
     cell = ws_users.find(username)
     ws_users.update_cell(cell.row, 4, nova_foto_b64)
     return True
 
 def atualizar_senha_usuario(username, nova_senha_hash):
-    gc = get_gspread_client()
-    sh = gc.open_by_url(PLANILHA_URL)
-    ws_users = sh.worksheet("Usuarios")
+    sh, ws_users = conectar_planilha_com_retry("Usuarios")
+    if not ws_users: return False
     cell = ws_users.find(username)
     ws_users.update_cell(cell.row, 3, nova_senha_hash)
     return True
@@ -233,6 +252,11 @@ def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, discipli
         worksheet.update_cell(row_idx + 2, col_idx, novo_valor)
         if novo_valor:
             registrar_acesso(worksheet, df_completo, username, disciplina, row_idx)
+        
+        # --- COOLDOWN OBRIGATÓRIO ---
+        # Evita APIError por excesso de requisições na escrita
+        time.sleep(1.5) 
+        
     except Exception as e:
         st.error(f"Erro ao salvar: {e}")
 
@@ -446,10 +470,10 @@ def tela_login():
 def pagina_inicial():
     sincronizar_colunas_usuarios()
 
-    gc = get_gspread_client()
-    if not gc: return
-    sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet(WORKSHEET_NAME)
+    # Usando conexão resiliente
+    sh, worksheet = conectar_planilha_com_retry(WORKSHEET_NAME)
+    if not worksheet: return
+
     df = pd.DataFrame(worksheet.get_all_records())
     
     if 'grande_area' in df.columns:
@@ -694,10 +718,10 @@ def pagina_dashboard():
     # --- AUTO-RECUPERAÇÃO DE COLUNAS ---
     sincronizar_colunas_usuarios()
 
-    gc = get_gspread_client()
-    if not gc: return
-    sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet(WORKSHEET_NAME)
+    # Usando conexão resiliente para dashboard
+    sh, worksheet = conectar_planilha_com_retry(WORKSHEET_NAME)
+    if not worksheet: return
+
     df = pd.DataFrame(worksheet.get_all_records())
     
     if 'grande_area' in df.columns:
@@ -833,10 +857,9 @@ def pagina_dashboard():
                     ir_para_disciplina(especialidade, grande_area_card)
 
 def pagina_focus():
-    gc = get_gspread_client()
-    if not gc: return
-    sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet(WORKSHEET_NAME)
+    # Usando conexão resiliente para página de foco
+    sh, worksheet = conectar_planilha_com_retry(WORKSHEET_NAME)
+    if not worksheet: return
     
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
@@ -864,10 +887,29 @@ def pagina_focus():
     cor_area = CORES_AREAS.get(grande_area.strip(), COR_PRINCIPAL)
     glow = f"color: white; text-shadow: 0 0 12px {cor_area}, 0 0 6px {cor_area}80;"
 
-    # --- INJEÇÃO DE CSS: Cores da Barra de Progresso ---
+    # --- INJEÇÃO DE CSS: Cores da Barra de Progresso E CHECKBOXES ---
     st.markdown(f"""
         <style>
+        /* Cor da Barra de Progresso (st.progress) */
         .stProgress > div > div > div > div {{
+            background-color: {cor_area} !important;
+        }}
+        
+        /* Cor do Checkbox Marcado (Tick) */
+        div[data-testid="stCheckbox"] label span[data-checked="true"] {{
+            background-color: {cor_area} !important;
+            border-color: {cor_area} !important;
+        }}
+        
+        /* Cor do Checkbox (Generic Override - tenta forçar em navegadores diferentes) */
+        div[role="checkbox"][aria-checked="true"] {{
+            background-color: {cor_area} !important;
+            border-color: {cor_area} !important;
+            color: white !important;
+        }}
+        
+        /* Tenta pegar o elemento interno do checkbox se a estrutura for diferente */
+        .stCheckbox input:checked + div {{
             background-color: {cor_area} !important;
         }}
         </style>
@@ -919,7 +961,6 @@ def pagina_focus():
                         
                     if novo != chk:
                         atualizar_status(worksheet, original_idx, col_idx_gs, novo, username, especialidade_ativa, df)
-                        time.sleep(0.5)
                         st.rerun()
         else:
             row = df_tema.iloc[0]
@@ -940,7 +981,6 @@ def pagina_focus():
             
             if novo != chk:
                 atualizar_status(worksheet, original_idx, col_idx_gs, novo, username, especialidade_ativa, df)
-                time.sleep(0.5)
                 st.rerun()
 
 def app_principal():
