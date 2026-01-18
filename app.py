@@ -19,7 +19,18 @@ st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="center
 
 # --- Constantes e CSS ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
+WORKSHEET_NAME = "novas_aulas" # Nome da nova aba
 COR_PRINCIPAL = "#bf7000" 
+
+# Cores por Grande Área
+CORES_AREAS = {
+    "Clínica Médica": "#ade082",
+    "Ginecologia": "#e082c6",
+    "Pediatria": "#f1ee90",
+    "Preventiva": "#90d3f1",
+    "Cirurgia": "#f1a790"
+}
+COR_DEFAULT_AREA = "#cccccc"
 
 # CSS Personalizado
 st.markdown(f"""
@@ -70,6 +81,12 @@ st.markdown(f"""
         }}
         
         h2, h3 {{ color: #333; }}
+        
+        /* Ajuste para expanders ficarem bonitos no modo foco */
+        .streamlit-expanderHeader {
+            font-weight: bold;
+            color: #333;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -145,12 +162,14 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     senha_segura = hash_senha(senha)
     ws_users.append_row([username, nome_completo, senha_segura, foto_base64])
     
+    # Adicionar coluna na aba de novas aulas
     try:
-        ws_dados = sh.worksheet("Dados")
+        ws_dados = sh.worksheet(WORKSHEET_NAME)
         headers = ws_dados.row_values(1)
         if nome_completo not in headers:
             ws_dados.update_cell(1, len(headers)+1, nome_completo)
-    except: pass
+    except Exception as e:
+        return False, f"Erro ao criar coluna de dados: {e}"
     
     return True, senha_segura
 
@@ -161,7 +180,7 @@ def atualizar_nome_usuario(username, nome_antigo, novo_nome):
     cell = ws_users.find(username)
     ws_users.update_cell(cell.row, 2, novo_nome)
     try:
-        ws_dados = sh.worksheet("Dados")
+        ws_dados = sh.worksheet(WORKSHEET_NAME)
         cell_header = ws_dados.find(nome_antigo)
         ws_dados.update_cell(cell_header.row, cell_header.col, novo_nome)
     except: pass
@@ -184,6 +203,8 @@ def atualizar_senha_usuario(username, nova_senha_hash):
     return True
 
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
+    # row_idx aqui deve ser o índice real da planilha (base 0 se for gspread indexado, mas gspread usa row=1 para header)
+    # Ajuste: row_idx vem do dataframe index, então na planilha é row_idx + 2 (1 header + 0-based index)
     try:
         worksheet.update_cell(row_idx + 2, col_idx, novo_valor)
         if novo_valor:
@@ -192,19 +213,26 @@ def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, discipli
         st.error(f"Erro ao salvar: {e}")
 
 def registrar_acesso(worksheet, df, username, disciplina, row_idx):
-    if 'LastSeen' not in df.columns: return
+    if 'LastSeen' not in df.columns: 
+        # Tenta criar a coluna se não existir na memória, mas idealmente deve existir na planilha
+        return
+        
     tag = str(username).upper()
     agora = datetime.now().strftime("%d/%m/%Y_%H:%M")
     novo_codigo = f"{tag}_{agora}_{disciplina.upper()}"
-    col_idx_last_seen = df.columns.get_loc('LastSeen') + 1
-    valor_atual = str(df.iloc[row_idx]['LastSeen']) if not df.empty else ""
-    logs_existentes = [v for v in valor_atual.split(';') if v and not v.startswith(tag)]
-    historico = [novo_codigo] + logs_existentes
-    valor_final = ";".join(historico)
+    
     try:
+        col_idx_last_seen = df.columns.get_loc('LastSeen') + 1
+        valor_atual = str(df.iloc[row_idx]['LastSeen']) if not df.empty else ""
+        
+        # Filtra logs para manter histórico
+        logs_existentes = [v for v in valor_atual.split(';') if v and not v.startswith(tag)]
+        historico = [novo_codigo] + logs_existentes
+        valor_final = ";".join(historico)
+        
         worksheet.update_cell(row_idx + 2, col_idx_last_seen, valor_final)
     except Exception as e:
-        print(f"Erro log: {e}")
+        print(f"Erro log (LastSeen pode não existir na planilha): {e}")
 
 def obter_ultima_disciplina(df, username):
     if 'LastSeen' not in df.columns or df.empty: return None
@@ -212,6 +240,7 @@ def obter_ultima_disciplina(df, username):
     ultima_data = None
     ultima_disciplina = None
     series_logs = df['LastSeen'].astype(str)
+    
     for val in series_logs:
         if tag in val:
             partes = val.split(';')
@@ -219,6 +248,7 @@ def obter_ultima_disciplina(df, username):
                 if log.startswith(tag):
                     try:
                         dados = log.split('_')
+                        # Esperado: USER_DD/MM/YYYY_HH:MM_DISCIPLINA
                         if len(dados) >= 4:
                             data_str = f"{dados[1]}_{dados[2]}"
                             disc_nome = dados[3]
@@ -228,23 +258,21 @@ def obter_ultima_disciplina(df, username):
                                 ultima_disciplina = disc_nome
                     except: continue
     if ultima_disciplina:
-        return ultima_disciplina.title().replace("Otorrinolaringologia", "Otorrino")
+        return ultima_disciplina.title()
     return None
 
 def identificar_colunas_usuarios(df):
-    cols_sistema = ['Disciplina', 'Semana', 'Aula', 'LastSeen', 'Link', 'ID', 'Material']
+    cols_sistema = ['cod_aula', 'grande_area', 'especialidade', 'tema_maior', 'titulo_aula', 'semana_media', 'LastSeen', 'Link', 'ID', 'Material']
     return [c for c in df.columns if c not in cols_sistema and "Unnamed" not in c]
 
 # --- Cálculo de Métricas ---
 
 def calcular_streak(df, username):
-    """Calcula dias consecutivos de estudo baseados na coluna LastSeen"""
     if 'LastSeen' not in df.columns: return 0
     
     tag = str(username).upper()
     datas_estudo = set()
     
-    # Extrai todas as datas que o usuario estudou
     series_logs = df['LastSeen'].astype(str)
     for val in series_logs:
         if tag in val:
@@ -252,7 +280,6 @@ def calcular_streak(df, username):
             for log in partes:
                 if log.startswith(tag):
                     try:
-                        # LOG: USER_DD/MM/YYYY_HH:MM_DISC
                         data_str = log.split('_')[1]
                         datas_estudo.add(datetime.strptime(data_str, "%d/%m/%Y").date())
                     except: continue
@@ -262,7 +289,6 @@ def calcular_streak(df, username):
     datas_ordenadas = sorted(list(datas_estudo), reverse=True)
     streak = 0
     
-    # Verifica a partir de hoje ou ontem (para não quebrar se não estudou hoje ainda)
     hoje = datetime.now().date()
     ontem = hoje - timedelta(days=1)
     
@@ -271,19 +297,18 @@ def calcular_streak(df, username):
     elif ontem in datas_ordenadas:
         current = ontem
     else:
-        return 0 # Quebrou o streak a mais de 1 dia
+        return 0 
         
     for d in datas_ordenadas:
         if d == current:
             streak += 1
             current -= timedelta(days=1)
-        elif d > current: continue # Caso tenha duplicata futura (erro logica)
-        else: break # Buraco na data
+        elif d > current: continue 
+        else: break 
         
     return streak
 
 def extrair_horas_gerais(df):
-    """Extrai lista de horas de estudo de TODOS os usuários"""
     horas = []
     if 'LastSeen' not in df.columns: return horas
     
@@ -292,7 +317,6 @@ def extrair_horas_gerais(df):
         logs = val.split(';')
         for log in logs:
             try:
-                # ..._HH:MM_...
                 hora_str = log.split('_')[2]
                 h = int(hora_str.split(':')[0])
                 horas.append(h)
@@ -353,7 +377,7 @@ def tela_login():
                     if user_db and verificar_senha(p, user_db['senha_hash']):
                         st.session_state['logado'] = True
                         st.session_state['usuario_atual'] = user_db
-                        st.session_state['pagina_atual'] = 'home' # Reseta para home
+                        st.session_state['pagina_atual'] = 'home'
                         st.rerun()
                     else: st.error("Erro no login.")
         
@@ -371,7 +395,7 @@ def tela_login():
                 img_to_crop = preparar_imagem_para_crop(uploaded)
                 c_crop_log, _ = st.columns([0.8, 0.2])
                 with c_crop_log:
-                    img = st_cropper(img_to_crop, aspect_ratio=(1,1), box_color='#bf7000', key="cropper_signup")
+                    img = st_cropper(img_to_crop, aspect_ratio=(1,1), box_color=COR_PRINCIPAL, key="cropper_signup")
                 foto_b64 = processar_imagem(img)
             
             if st.button("Cadastrar", use_container_width=True):
@@ -397,7 +421,7 @@ def pagina_inicial():
     gc = get_gspread_client()
     if not gc: return
     sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet("Dados")
+    worksheet = sh.worksheet(WORKSHEET_NAME)
     df = pd.DataFrame(worksheet.get_all_records())
     
     user = st.session_state['usuario_atual']
@@ -407,7 +431,7 @@ def pagina_inicial():
     cor = COR_PRINCIPAL
     
     if nome_coluna not in df.columns:
-        st.warning("Usuário não encontrado na planilha de Dados.")
+        st.warning(f"Usuário não encontrado na planilha {WORKSHEET_NAME}.")
         return
 
     # --- CABEÇALHO ---
@@ -462,21 +486,24 @@ def pagina_inicial():
 
     col1, col2 = st.columns(2)
     
-    # 🕸️ Radar de Competências
+    # 🕸️ Radar de Competências (Por Especialidade agora)
     with col1:
-        st.markdown("**🕸️ Radar de Competências**")
-        df_radar = df.groupby("Disciplina")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
-        df_radar.columns = ['Disciplina', 'Score']
+        st.markdown("**🕸️ Radar de Especialidades**")
+        df_radar = df.groupby("especialidade")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
+        df_radar.columns = ['Especialidade', 'Score']
+        # Filtra top 6 para não poluir
+        df_radar = df_radar.sort_values('Score', ascending=False).head(6)
         
-        fig = px.line_polar(df_radar, r='Score', theta='Disciplina', line_close=True)
+        fig = px.line_polar(df_radar, r='Score', theta='Especialidade', line_close=True)
         fig.update_traces(fill='toself', line_color=cor)
         fig.update_layout(height=300, margin=dict(t=20, b=20, l=40, r=40))
         st.plotly_chart(fig, use_container_width=True)
 
-    # 📅 Velocidade Semanal
+    # 📅 Velocidade (Usando semana_media)
     with col2:
         st.markdown("**📅 Velocidade Semanal**")
-        df['SemanaInt'] = pd.to_numeric(df['Semana'], errors='coerce')
+        # Converte semana_media para numero
+        df['SemanaInt'] = pd.to_numeric(df['semana_media'], errors='coerce')
         df_sem = df.dropna(subset=['SemanaInt'])
         df_line = df_sem.groupby("SemanaInt")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
         
@@ -561,15 +588,14 @@ def pagina_inicial():
     
     with c_glob3:
         st.markdown("**📉 Dificuldade (Taxa de Conclusão Global)**")
-        # Média de True por disciplina entre TODOS os usuarios
         df_global = df.copy()
         for c in cols_usuarios:
             df_global[c] = df_global[c].apply(limpar_booleano)
             
         df_global['SomaTurma'] = df_global[cols_usuarios].sum(axis=1)
-        df_dif = df_global.groupby("Disciplina")['SomaTurma'].mean().reset_index().sort_values('SomaTurma')
+        df_dif = df_global.groupby("especialidade")['SomaTurma'].mean().reset_index().sort_values('SomaTurma')
         
-        fig3 = px.bar(df_dif.head(5), x='SomaTurma', y='Disciplina', orientation='h', title="Top 5 Menos Feitas")
+        fig3 = px.bar(df_dif.head(5), x='SomaTurma', y='Especialidade', orientation='h', title="Top 5 Menos Feitas")
         fig3.update_traces(marker_color='#e74c3c')
         fig3.update_layout(height=250, margin=dict(t=30, b=20, l=20, r=20), xaxis_title="Média de Conclusões")
         st.plotly_chart(fig3, use_container_width=True)
@@ -658,7 +684,7 @@ def pagina_dashboard():
     gc = get_gspread_client()
     if not gc: return
     sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet("Dados")
+    worksheet = sh.worksheet(WORKSHEET_NAME)
     df = pd.DataFrame(worksheet.get_all_records())
     
     user_data = st.session_state['usuario_atual']
@@ -673,7 +699,6 @@ def pagina_dashboard():
     primeiro_nome = nome_coluna.split()[0].title()
     foto_str = user_data.get('foto', '')
     cor = COR_PRINCIPAL
-    glow_style = f"color: white; text-shadow: 0 0 10px {cor}cc, 0 0 5px {cor}80;"
     
     try: col_idx_gs = worksheet.find(nome_coluna).col
     except: st.error("Erro: Coluna do usuário não encontrada."); return
@@ -708,7 +733,7 @@ def pagina_dashboard():
     
     ultima_disc = obter_ultima_disciplina(df, username)
     if ultima_disc:
-        validas = [d for d in df['Disciplina'].unique() if d]
+        validas = [d for d in df['especialidade'].unique() if d]
         match = next((d for d in validas if d.upper() == ultima_disc.upper()), None)
         if match:
             st.markdown(f"**📍 Continuar de onde parou:**")
@@ -721,97 +746,145 @@ def pagina_dashboard():
     pct = col.sum() / total_aulas if total_aulas > 0 else 0
     st.progress(pct)
 
-    st.markdown("### 📚 Suas Disciplinas")
-    ordem_pref = ["Cardiologia", "Pneumologia", "Endocrinologia", "Nefrologia", "Gastroenterologia", "Hepatologia", "Infectologia", "Hematologia", "Reumatologia", "Neurologia", "Psiquiatria", "Cirurgia", "Ginecologia", "Obstetrícia", "Pediatria", "Preventiva", "Dermatologia", "Ortopedia", "Otorrinolaringologia", "Oftalmologia"]
-    todas = sorted(list(df['Disciplina'].unique()))
-    lista = ["Por Semana"] + [d for d in ordem_pref if d in todas] + [d for d in todas if d not in ordem_pref]
+    st.markdown("### 📚 Suas Disciplinas (Especialidades)")
+    
+    # Lista de Especialidades disponíveis
+    lista_especialidades = sorted(list(df['especialidade'].unique()))
     
     cols = st.columns(2)
-    for i, disc in enumerate(lista):
-        if not disc: continue
+    for i, especialidade in enumerate(lista_especialidades):
+        if not especialidade: continue
+        
+        # Filtra o DataFrame para pegar a "grande_area" correta dessa especialidade
+        df_esp = df[df['especialidade'] == especialidade]
+        if df_esp.empty: continue
+        
+        grande_area = df_esp.iloc[0]['grande_area']
+        cor_card = CORES_AREAS.get(grande_area, COR_DEFAULT_AREA)
+        
+        glow_style = f"color: white; text-shadow: 0 0 10px {cor_card}cc, 0 0 5px {cor_card}80;"
+
         with cols[i % 2]:
             with st.container(border=True):
-                if disc == "Por Semana":
-                    df_d = df
-                    titulo_card = "📅 Por Semana"
-                else:
-                    df_d = df[df['Disciplina'] == disc]
-                    titulo_card = disc
-
-                feitos = df_d[nome_coluna].apply(limpar_booleano).sum()
-                pct_d = feitos / len(df_d) if len(df_d) > 0 else 0
-                style = f"background: {cor}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
-                st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{titulo_card}</h4>", unsafe_allow_html=True)
+                feitos = df_esp[nome_coluna].apply(limpar_booleano).sum()
+                pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
+                
+                style = f"background: {cor_card}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
+                
+                st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{especialidade}</h4>", unsafe_allow_html=True)
+                st.caption(f"{grande_area}")
                 st.progress(pct_d)
+                
                 ct, cb = st.columns([0.6, 0.4])
-                ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_d)})")
-                if cb.button("Abrir ➝", key=f"b_{disc}"): ir_para_disciplina(disc)
+                ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_esp)})")
+                if cb.button("Abrir ➝", key=f"b_{especialidade}"): ir_para_disciplina(especialidade)
 
 def pagina_focus():
     gc = get_gspread_client()
     if not gc: return
     sh = gc.open_by_url(PLANILHA_URL)
-    worksheet = sh.worksheet("Dados")
-    df = pd.DataFrame(worksheet.get_all_records())
+    worksheet = sh.worksheet(WORKSHEET_NAME)
+    
+    # Carrega dados e preserva o índice original da planilha para updates
+    # Importante: Como gspread tem header na linha 1, o índice 0 do Pandas é a linha 2 do Sheets.
+    data = worksheet.get_all_records()
+    df = pd.DataFrame(data)
+    df['original_row_idx'] = df.index 
     
     user = st.session_state['usuario_atual']
     nome_coluna = user['nome_completo']
     username = user['username']
-    cor = COR_PRINCIPAL
     
     try: col_idx_gs = worksheet.find(nome_coluna).col
     except: return
 
-    disc = st.session_state['disciplina_ativa']
-    glow = f"color: white; text-shadow: 0 0 12px {cor}, 0 0 6px {cor}80;"
+    especialidade_ativa = st.session_state['disciplina_ativa']
+
+    # Filtra pela especialidade
+    df_active = df[df['especialidade'] == especialidade_ativa].copy()
+    
+    # Pega cor da grande área
+    grande_area = df_active.iloc[0]['grande_area'] if not df_active.empty else "Geral"
+    cor_area = CORES_AREAS.get(grande_area, COR_PRINCIPAL)
+    glow = f"color: white; text-shadow: 0 0 12px {cor_area}, 0 0 6px {cor_area}80;"
 
     cb, ct = st.columns([0.15, 0.85])
     with cb:
         if st.button("⬅ Voltar"): ir_para_dashboard()
     with ct:
-        titulo_header = "📅 Visão Semanal" if disc == "Por Semana" else f"📖 {disc}"
-        st.markdown(f"<h2 style='background: {cor}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>{titulo_header}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='background: {cor_area}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>📖 {especialidade_ativa}</h2>", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    if disc == "Por Semana":
-        semanas_unicas = sorted([int(x) for x in df['Semana'].unique() if str(x).isdigit()])
-        for sem in semanas_unicas:
-            df_s = df[df['Semana'] == sem]
-            feitos_s = df_s[nome_coluna].apply(limpar_booleano).sum()
-            total_s = len(df_s)
-            pct_s = feitos_s / total_s if total_s > 0 else 0
+    # Barra de Progresso da Especialidade
+    feitos_esp = df_active[nome_coluna].apply(limpar_booleano).sum()
+    pct_esp = feitos_esp / len(df_active) if len(df_active) > 0 else 0
+    st.progress(pct_esp)
+    st.caption(f"Progresso: {int(pct_esp*100)}% concluído")
+    st.markdown("---")
+
+    # LÓGICA DE ORDENAÇÃO E AGRUPAMENTO
+    # 1. Ordenar por semana_media (ascendente)
+    df_active['semana_media'] = pd.to_numeric(df_active['semana_media'], errors='coerce')
+    df_active = df_active.sort_values(by=['semana_media', 'cod_aula'])
+
+    # 2. Identificar temas únicos mantendo a ordem da semana_media
+    # Usamos unique() do Pandas que mantém a ordem de aparição após o sort
+    temas_ordenados = df_active['tema_maior'].unique()
+
+    for tema in temas_ordenados:
+        # Pega todas as linhas desse tema dentro dessa especialidade
+        df_tema = df_active[df_active['tema_maior'] == tema]
+        
+        qtd_aulas = len(df_tema)
+        
+        # Lógica de renderização
+        if qtd_aulas > 1:
+            # Caso com múltiplas aulas: Usar Expander
+            aulas_feitas_tema = df_tema[nome_coluna].apply(limpar_booleano).sum()
+            pct_tema = int((aulas_feitas_tema / qtd_aulas) * 100)
             
-            titulo_acc = f"Semana {sem} ({int(pct_s*100)}%)"
-            with st.expander(titulo_acc):
-                st.progress(pct_s)
-                for idx, row in df_s.iterrows():
+            icon_check = "✅" if pct_tema == 100 else ""
+            
+            with st.expander(f"{tema} ({pct_tema}%) {icon_check}"):
+                for idx, row in df_tema.iterrows():
                     chk = limpar_booleano(row[nome_coluna])
-                    ck, ct = st.columns([0.1, 0.9])
-                    key = f"chk_{idx}_{nome_coluna}_sem"
-                    with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
-                    with ct: 
-                        txt = f"**{row['Disciplina']}**: {row.get('Aula','-')}"
-                        if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-                        else: st.markdown(txt)
+                    original_idx = row['original_row_idx']
+                    
+                    c_chk, c_txt = st.columns([0.1, 0.9])
+                    key = f"chk_{original_idx}_{nome_coluna}"
+                    
+                    with c_chk:
+                        novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
+                    with c_txt:
+                        txt_aula = row['titulo_aula']
+                        if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>{txt_aula}</span>", unsafe_allow_html=True)
+                        else: st.markdown(f"{txt_aula}")
+                        
                     if novo != chk:
-                        atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
+                        atualizar_status(worksheet, original_idx, col_idx_gs, novo, username, especialidade_ativa, df)
                         time.sleep(0.5)
                         st.rerun()
-    else:
-        df_d = df[df['Disciplina'] == disc]
-        st.info(f"Concluídas: **{df_d[nome_coluna].apply(limpar_booleano).sum()}/{len(df_d)}**")
-        for idx, row in df_d.iterrows():
+        else:
+            # Caso com aula única: Linha única formatada
+            row = df_tema.iloc[0]
             chk = limpar_booleano(row[nome_coluna])
-            ck, ct = st.columns([0.1, 0.9])
-            key = f"chk_{idx}_{nome_coluna}"
-            with ck: novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
-            with ct: 
-                txt = f"{row.get('Aula','-')}"
-                if chk: st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {txt}</span>", unsafe_allow_html=True)
-                else: st.markdown(txt)
+            original_idx = row['original_row_idx']
+            
+            c_chk, c_txt = st.columns([0.1, 0.9])
+            key = f"chk_{original_idx}_{nome_coluna}"
+            
+            with c_chk:
+                novo = st.checkbox("x", value=chk, key=key, label_visibility="collapsed")
+            with c_txt:
+                titulo_formatado = f"**{tema}:** {row['titulo_aula']}"
+                if chk: 
+                    st.markdown(f"<span style='opacity:0.6; text-decoration:line-through'>✅ {titulo_formatado}</span>", unsafe_allow_html=True)
+                else: 
+                    st.markdown(titulo_formatado)
+            
             if novo != chk:
-                atualizar_status(worksheet, idx, col_idx_gs, novo, username, disc, df)
+                atualizar_status(worksheet, original_idx, col_idx_gs, novo, username, especialidade_ativa, df)
                 time.sleep(0.5)
                 st.rerun()
 
