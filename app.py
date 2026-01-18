@@ -56,8 +56,9 @@ st.markdown(f"""
             margin-right: auto;
         }}
         
+        /* Ajuste de margem superior solicitado */
         .block-container {{ 
-            padding-top: 30px !important; 
+            padding-top: 40px !important; 
         }}
 
         .text-gradient {{
@@ -67,6 +68,7 @@ st.markdown(f"""
             font-weight: 800;
         }}
         
+        /* Cor padrão da barra de progresso (será sobrescrita dinamicamente no foco) */
         .stProgress > div > div > div > div {{
             background-color: {COR_PRINCIPAL};
         }}
@@ -203,8 +205,6 @@ def atualizar_senha_usuario(username, nova_senha_hash):
     return True
 
 def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, disciplina, df_completo):
-    # row_idx aqui deve ser o índice real da planilha (base 0 se for gspread indexado, mas gspread usa row=1 para header)
-    # Ajuste: row_idx vem do dataframe index, então na planilha é row_idx + 2 (1 header + 0-based index)
     try:
         worksheet.update_cell(row_idx + 2, col_idx, novo_valor)
         if novo_valor:
@@ -214,7 +214,6 @@ def atualizar_status(worksheet, row_idx, col_idx, novo_valor, username, discipli
 
 def registrar_acesso(worksheet, df, username, disciplina, row_idx):
     if 'LastSeen' not in df.columns: 
-        # Tenta criar a coluna se não existir na memória, mas idealmente deve existir na planilha
         return
         
     tag = str(username).upper()
@@ -225,14 +224,13 @@ def registrar_acesso(worksheet, df, username, disciplina, row_idx):
         col_idx_last_seen = df.columns.get_loc('LastSeen') + 1
         valor_atual = str(df.iloc[row_idx]['LastSeen']) if not df.empty else ""
         
-        # Filtra logs para manter histórico
         logs_existentes = [v for v in valor_atual.split(';') if v and not v.startswith(tag)]
         historico = [novo_codigo] + logs_existentes
         valor_final = ";".join(historico)
         
         worksheet.update_cell(row_idx + 2, col_idx_last_seen, valor_final)
     except Exception as e:
-        print(f"Erro log (LastSeen pode não existir na planilha): {e}")
+        print(f"Erro log: {e}")
 
 def obter_ultima_disciplina(df, username):
     if 'LastSeen' not in df.columns or df.empty: return None
@@ -248,7 +246,6 @@ def obter_ultima_disciplina(df, username):
                 if log.startswith(tag):
                     try:
                         dados = log.split('_')
-                        # Esperado: USER_DD/MM/YYYY_HH:MM_DISCIPLINA
                         if len(dados) >= 4:
                             data_str = f"{dados[1]}_{dados[2]}"
                             disc_nome = dados[3]
@@ -431,14 +428,10 @@ def pagina_inicial():
     cor = COR_PRINCIPAL
     
     if nome_coluna not in df.columns:
-        # --- AUTO CORREÇÃO PARA USUÁRIOS ANTIGOS ---
         st.info(f"🆕 Sincronizando cadastro antigo na nova planilha... Aguarde.")
         try:
-            # Pega os cabeçalhos atuais
             headers = worksheet.row_values(1)
-            # Define a próxima coluna livre
             next_col = len(headers) + 1
-            # Atualiza a célula do cabeçalho
             worksheet.update_cell(1, next_col, nome_coluna)
             st.success("Sincronizado! Recarregando...")
             time.sleep(1)
@@ -499,12 +492,10 @@ def pagina_inicial():
 
     col1, col2 = st.columns(2)
     
-    # 🕸️ Radar de Competências (Por Especialidade agora)
     with col1:
         st.markdown("**🕸️ Radar de Especialidades**")
         df_radar = df.groupby("especialidade")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
         df_radar.columns = ['Especialidade', 'Score']
-        # Filtra top 6 para não poluir
         df_radar = df_radar.sort_values('Score', ascending=False).head(6)
         
         fig = px.line_polar(df_radar, r='Score', theta='Especialidade', line_close=True)
@@ -512,10 +503,8 @@ def pagina_inicial():
         fig.update_layout(height=300, margin=dict(t=20, b=20, l=40, r=40))
         st.plotly_chart(fig, use_container_width=True)
 
-    # 📅 Velocidade (Usando semana_media)
     with col2:
         st.markdown("**📅 Velocidade Semanal**")
-        # Converte semana_media para numero
         df['SemanaInt'] = pd.to_numeric(df['semana_media'], errors='coerce')
         df_sem = df.dropna(subset=['SemanaInt'])
         df_line = df_sem.groupby("SemanaInt")[nome_coluna].apply(lambda x: x.apply(limpar_booleano).sum() / len(x) if len(x)>0 else 0).reset_index()
@@ -529,7 +518,6 @@ def pagina_inicial():
         )
         st.plotly_chart(fig2, use_container_width=True)
     
-    # 🔥 Streak
     st.markdown("**🔥 Consistência (Streak)**")
     dias_seguidos = calcular_streak(df, user['username'])
     st.markdown(f"""
@@ -539,7 +527,6 @@ def pagina_inicial():
         </div>
     """, unsafe_allow_html=True)
 
-    # --- ESPAÇO ---
     st.markdown("<div style='height: 30px'></div>", unsafe_allow_html=True)
 
     # --- 2. DESEMPENHO GLOBAL ---
@@ -548,15 +535,12 @@ def pagina_inicial():
 
     cols_usuarios = identificar_colunas_usuarios(df)
     
-    # Preparar Dados Globais
     scores_globais = {}
     for c in cols_usuarios:
         scores_globais[c] = df[c].apply(limpar_booleano).sum()
     
-    # Ordenar Ranking
     ranking_sorted = sorted(scores_globais.items(), key=lambda item: item[1], reverse=True)
     
-    # Lista de codinomes
     codinomes = [
         "Golfinho Dedicado", "Águia Focada", "Leão Destemido", "Coruja Sábia", 
         "Tigre Incansável", "Lobo Estratégico", "Urso Persistente", "Falcão Veloz",
@@ -597,34 +581,20 @@ def pagina_inicial():
         
     st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
     
-    c_glob3, c_glob4 = st.columns(2)
+    # --- Modificação: Gráfico de Dificuldade removido ---
+    # Apenas o gráfico de horários permanece
     
-    with c_glob3:
-        st.markdown("**📉 Dificuldade (Taxa de Conclusão Global)**")
-        df_global = df.copy()
-        for c in cols_usuarios:
-            df_global[c] = df_global[c].apply(limpar_booleano)
-            
-        df_global['SomaTurma'] = df_global[cols_usuarios].sum(axis=1)
-        df_dif = df_global.groupby("especialidade")['SomaTurma'].mean().reset_index().sort_values('SomaTurma')
-        
-        fig3 = px.bar(df_dif.head(5), x='SomaTurma', y='Especialidade', orientation='h', title="Top 5 Menos Feitas")
-        fig3.update_traces(marker_color='#e74c3c')
-        fig3.update_layout(height=250, margin=dict(t=30, b=20, l=20, r=20), xaxis_title="Média de Conclusões")
-        st.plotly_chart(fig3, use_container_width=True)
-
-    with c_glob4:
-        st.markdown("**🕒 Horários de Pico**")
-        horas_estudo = extrair_horas_gerais(df)
-        if horas_estudo:
-            counts = pd.Series(horas_estudo).value_counts().sort_index()
-            df_hist = pd.DataFrame({'Hora': counts.index, 'Atividade': counts.values})
-            fig4 = px.bar(df_hist, x='Hora', y='Atividade')
-            fig4.update_traces(marker_color=cor)
-            fig4.update_layout(height=250, margin=dict(t=20, b=20, l=20, r=20), xaxis=dict(dtick=2))
-            st.plotly_chart(fig4, use_container_width=True)
-        else:
-            st.info("Sem dados suficientes ainda.")
+    st.markdown("**🕒 Horários de Pico**")
+    horas_estudo = extrair_horas_gerais(df)
+    if horas_estudo:
+        counts = pd.Series(horas_estudo).value_counts().sort_index()
+        df_hist = pd.DataFrame({'Hora': counts.index, 'Atividade': counts.values})
+        fig4 = px.bar(df_hist, x='Hora', y='Atividade')
+        fig4.update_traces(marker_color=cor)
+        fig4.update_layout(height=250, margin=dict(t=20, b=20, l=20, r=20), xaxis=dict(dtick=2))
+        st.plotly_chart(fig4, use_container_width=True)
+    else:
+        st.info("Sem dados suficientes ainda.")
 
 def pagina_perfil():
     user = st.session_state['usuario_atual']
@@ -705,7 +675,6 @@ def pagina_dashboard():
     username = user_data['username']
     
     if nome_coluna not in df.columns:
-        # --- AUTO CORREÇÃO PARA USUÁRIOS ANTIGOS ---
         st.info(f"🆕 Sincronizando cadastro antigo na nova planilha... Aguarde.")
         try:
             headers = worksheet.row_values(1)
@@ -768,21 +737,44 @@ def pagina_dashboard():
     pct = col.sum() / total_aulas if total_aulas > 0 else 0
     st.progress(pct)
 
-    st.markdown("### 📚 Suas Disciplinas (Especialidades)")
+    # --- MODIFICAÇÃO: Título e Filtro ---
+    col_titulo, col_filtro = st.columns([0.6, 0.4])
     
-    # Lista de Especialidades disponíveis
-    lista_especialidades = sorted(list(df['especialidade'].unique()))
+    with col_titulo:
+        st.markdown("### 📚 Suas Disciplinas")
+    
+    # Lista única de Grandes Áreas para o filtro
+    lista_grandes_areas = sorted([ga for ga in df['grande_area'].unique() if ga])
+    opcoes_filtro = ["Todas"] + lista_grandes_areas
+    
+    with col_filtro:
+        filtro_selecionado = st.selectbox("Filtrar por Área", options=opcoes_filtro, label_visibility="collapsed")
+
+    # --- MODIFICAÇÃO: Lógica de Ordenação e Filtragem ---
+    # 1. Filtra primeiro
+    if filtro_selecionado != "Todas":
+        df_filtrado = df[df['grande_area'] == filtro_selecionado].copy()
+    else:
+        df_filtrado = df.copy()
+
+    # 2. Ordena por Grande Area e depois por Especialidade
+    # drop_duplicates em 'especialidade' para gerar os cards únicos, mas mantendo info de grande_area
+    df_cards = df_filtrado.drop_duplicates(subset=['especialidade'])
+    df_cards = df_cards.sort_values(by=['grande_area', 'especialidade'])
+    
+    lista_especialidades_ordenada = df_cards['especialidade'].tolist()
     
     cols = st.columns(2)
-    for i, especialidade in enumerate(lista_especialidades):
+    for i, especialidade in enumerate(lista_especialidades_ordenada):
         if not especialidade: continue
         
-        # Filtra o DataFrame para pegar a "grande_area" correta dessa especialidade
+        # Filtra o DataFrame original para pegar dados dessa especialidade (para calcular progresso)
         df_esp = df[df['especialidade'] == especialidade]
         if df_esp.empty: continue
         
         grande_area = df_esp.iloc[0]['grande_area']
-        cor_card = CORES_AREAS.get(grande_area, COR_DEFAULT_AREA)
+        # Corrigindo a busca da cor (removendo espaços extras se houver e garantindo match)
+        cor_card = CORES_AREAS.get(grande_area.strip(), COR_DEFAULT_AREA)
         
         glow_style = f"color: white; text-shadow: 0 0 10px {cor_card}cc, 0 0 5px {cor_card}80;"
 
@@ -791,7 +783,8 @@ def pagina_dashboard():
                 feitos = df_esp[nome_coluna].apply(limpar_booleano).sum()
                 pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
                 
-                style = f"background: {cor_card}; padding: 5px 10px; border-radius: 5px; {glow_style}" if pct_d > 0 else "color:#444;"
+                # Título com a cor da área
+                style = f"background: {cor_card}; padding: 5px 10px; border-radius: 5px; {glow_style}"
                 
                 st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{especialidade}</h4>", unsafe_allow_html=True)
                 st.caption(f"{grande_area}")
@@ -807,8 +800,6 @@ def pagina_focus():
     sh = gc.open_by_url(PLANILHA_URL)
     worksheet = sh.worksheet(WORKSHEET_NAME)
     
-    # Carrega dados e preserva o índice original da planilha para updates
-    # Importante: Como gspread tem header na linha 1, o índice 0 do Pandas é a linha 2 do Sheets.
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
     df['original_row_idx'] = df.index 
@@ -822,50 +813,50 @@ def pagina_focus():
 
     especialidade_ativa = st.session_state['disciplina_ativa']
 
-    # Filtra pela especialidade
     df_active = df[df['especialidade'] == especialidade_ativa].copy()
     
-    # Pega cor da grande área
     grande_area = df_active.iloc[0]['grande_area'] if not df_active.empty else "Geral"
-    cor_area = CORES_AREAS.get(grande_area, COR_PRINCIPAL)
+    # Garante que a cor seja encontrada
+    cor_area = CORES_AREAS.get(grande_area.strip(), COR_PRINCIPAL)
     glow = f"color: white; text-shadow: 0 0 12px {cor_area}, 0 0 6px {cor_area}80;"
+
+    # --- MODIFICAÇÃO: Injeção de CSS para cor da barra de progresso ---
+    # Isso sobrescreve a cor padrão apenas nesta página
+    st.markdown(f"""
+        <style>
+        .stProgress > div > div > div > div {{
+            background-color: {cor_area} !important;
+        }}
+        </style>
+    """, unsafe_allow_html=True)
 
     cb, ct = st.columns([0.15, 0.85])
     with cb:
         if st.button("⬅ Voltar"): ir_para_dashboard()
     with ct:
+        # Título com a cor da área
         st.markdown(f"<h2 style='background: {cor_area}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>📖 {especialidade_ativa}</h2>", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Barra de Progresso da Especialidade
     feitos_esp = df_active[nome_coluna].apply(limpar_booleano).sum()
     pct_esp = feitos_esp / len(df_active) if len(df_active) > 0 else 0
     st.progress(pct_esp)
     st.caption(f"Progresso: {int(pct_esp*100)}% concluído")
     st.markdown("---")
 
-    # LÓGICA DE ORDENAÇÃO E AGRUPAMENTO
-    # 1. Ordenar por semana_media (ascendente)
     df_active['semana_media'] = pd.to_numeric(df_active['semana_media'], errors='coerce')
     df_active = df_active.sort_values(by=['semana_media', 'cod_aula'])
 
-    # 2. Identificar temas únicos mantendo a ordem da semana_media
-    # Usamos unique() do Pandas que mantém a ordem de aparição após o sort
     temas_ordenados = df_active['tema_maior'].unique()
 
     for tema in temas_ordenados:
-        # Pega todas as linhas desse tema dentro dessa especialidade
         df_tema = df_active[df_active['tema_maior'] == tema]
-        
         qtd_aulas = len(df_tema)
         
-        # Lógica de renderização
         if qtd_aulas > 1:
-            # Caso com múltiplas aulas: Usar Expander
             aulas_feitas_tema = df_tema[nome_coluna].apply(limpar_booleano).sum()
             pct_tema = int((aulas_feitas_tema / qtd_aulas) * 100)
-            
             icon_check = "✅" if pct_tema == 100 else ""
             
             with st.expander(f"{tema} ({pct_tema}%) {icon_check}"):
@@ -888,7 +879,6 @@ def pagina_focus():
                         time.sleep(0.5)
                         st.rerun()
         else:
-            # Caso com aula única: Linha única formatada
             row = df_tema.iloc[0]
             chk = limpar_booleano(row[nome_coluna])
             original_idx = row['original_row_idx']
