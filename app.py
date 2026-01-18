@@ -82,11 +82,11 @@ st.markdown(f"""
         
         h2, h3 {{ color: #333; }}
         
-        /* Ajuste para expanders ficarem bonitos no modo foco */
-        .streamlit-expanderHeader {
+        /* Ajuste para expanders ficarem bonitos no modo foco - CHAVES DUPLAS CORRIGIDAS AQUI */
+        .streamlit-expanderHeader {{
             font-weight: bold;
             color: #333;
-        }
+        }}
     </style>
 """, unsafe_allow_html=True)
 
