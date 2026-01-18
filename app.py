@@ -19,10 +19,10 @@ st.set_page_config(page_title="MedTracker Pro", page_icon="🩺", layout="center
 
 # --- Constantes e CSS ---
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnIYqQYglapbQ7x0000_rc/edit?usp=sharing"
-WORKSHEET_NAME = "novas_aulas" # Nome da nova aba
+WORKSHEET_NAME = "novas_aulas" 
 COR_PRINCIPAL = "#bf7000" 
 
-# Cores por Grande Área
+# Mapeamento de Cores (Certifique-se que o nome no Excel bate com a chave aqui)
 CORES_AREAS = {
     "Clínica Médica": "#ade082",
     "Ginecologia": "#e082c6",
@@ -30,7 +30,9 @@ CORES_AREAS = {
     "Preventiva": "#90d3f1",
     "Cirurgia": "#f1a790"
 }
-COR_DEFAULT_AREA = "#cccccc"
+# Cor para disciplinas não iniciadas (Cinza)
+COR_INATIVO = "#e0e0e0"
+COR_TEXTO_INATIVO = "#555555"
 
 # CSS Personalizado
 st.markdown(f"""
@@ -56,7 +58,7 @@ st.markdown(f"""
             margin-right: auto;
         }}
         
-        /* Ajuste de margem superior solicitado */
+        /* Margem superior de 40px */
         .block-container {{ 
             padding-top: 40px !important; 
         }}
@@ -68,7 +70,7 @@ st.markdown(f"""
             font-weight: 800;
         }}
         
-        /* Cor padrão da barra de progresso (será sobrescrita dinamicamente no foco) */
+        /* Cor padrão da barra de progresso */
         .stProgress > div > div > div > div {{
             background-color: {COR_PRINCIPAL};
         }}
@@ -84,7 +86,6 @@ st.markdown(f"""
         
         h2, h3 {{ color: #333; }}
         
-        /* Ajuste para expanders ficarem bonitos no modo foco */
         .streamlit-expanderHeader {{
             font-weight: bold;
             color: #333;
@@ -164,7 +165,6 @@ def criar_usuario(username, nome_completo, senha, foto_base64=""):
     senha_segura = hash_senha(senha)
     ws_users.append_row([username, nome_completo, senha_segura, foto_base64])
     
-    # Adicionar coluna na aba de novas aulas
     try:
         ws_dados = sh.worksheet(WORKSHEET_NAME)
         headers = ws_dados.row_values(1)
@@ -421,6 +421,10 @@ def pagina_inicial():
     worksheet = sh.worksheet(WORKSHEET_NAME)
     df = pd.DataFrame(worksheet.get_all_records())
     
+    # Tratamento inicial: Limpar espaços das Grandes Áreas
+    if 'grande_area' in df.columns:
+        df['grande_area'] = df['grande_area'].astype(str).str.strip()
+
     user = st.session_state['usuario_atual']
     nome_coluna = user['nome_completo']
     primeiro_nome = nome_coluna.split()[0].title()
@@ -581,9 +585,6 @@ def pagina_inicial():
         
     st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
     
-    # --- Modificação: Gráfico de Dificuldade removido ---
-    # Apenas o gráfico de horários permanece
-    
     st.markdown("**🕒 Horários de Pico**")
     horas_estudo = extrair_horas_gerais(df)
     if horas_estudo:
@@ -670,6 +671,10 @@ def pagina_dashboard():
     worksheet = sh.worksheet(WORKSHEET_NAME)
     df = pd.DataFrame(worksheet.get_all_records())
     
+    # TRATAMENTO FUNDAMENTAL: Limpar espaços em branco das áreas
+    if 'grande_area' in df.columns:
+        df['grande_area'] = df['grande_area'].astype(str).str.strip()
+    
     user_data = st.session_state['usuario_atual']
     nome_coluna = user_data['nome_completo']
     username = user_data['username']
@@ -722,10 +727,12 @@ def pagina_dashboard():
 
     st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
     
+    # --- BOTÃO CONTINUAR DE ONDE PAROU (REINSERIDO) ---
     ultima_disc = obter_ultima_disciplina(df, username)
     if ultima_disc:
+        # Tenta achar a especialidade na lista
         validas = [d for d in df['especialidade'].unique() if d]
-        match = next((d for d in validas if d.upper() == ultima_disc.upper()), None)
+        match = next((d for d in validas if d.upper().strip() == ultima_disc.upper().strip()), None)
         if match:
             st.markdown(f"**📍 Continuar de onde parou:**")
             if st.button(f"🎬 Ir para {match}", type="primary"):
@@ -737,62 +744,66 @@ def pagina_dashboard():
     pct = col.sum() / total_aulas if total_aulas > 0 else 0
     st.progress(pct)
 
-    # --- MODIFICAÇÃO: Título e Filtro ---
+    # --- Título e Filtro ---
     col_titulo, col_filtro = st.columns([0.6, 0.4])
     
     with col_titulo:
         st.markdown("### 📚 Suas Disciplinas")
     
-    # Lista única de Grandes Áreas para o filtro
     lista_grandes_areas = sorted([ga for ga in df['grande_area'].unique() if ga])
     opcoes_filtro = ["Todas"] + lista_grandes_areas
     
     with col_filtro:
         filtro_selecionado = st.selectbox("Filtrar por Área", options=opcoes_filtro, label_visibility="collapsed")
 
-    # --- MODIFICAÇÃO: Lógica de Ordenação e Filtragem ---
-    # 1. Filtra primeiro
+    # --- Lógica de Filtragem e Exibição ---
     if filtro_selecionado != "Todas":
         df_filtrado = df[df['grande_area'] == filtro_selecionado].copy()
     else:
         df_filtrado = df.copy()
 
-    # 2. Ordena por Grande Area e depois por Especialidade
-    # drop_duplicates em 'especialidade' para gerar os cards únicos, mas mantendo info de grande_area
+    # Prepara a lista de cards (Especialidades) baseada no filtro
     df_cards = df_filtrado.drop_duplicates(subset=['especialidade'])
     df_cards = df_cards.sort_values(by=['grande_area', 'especialidade'])
     
-    lista_especialidades_ordenada = df_cards['especialidade'].tolist()
+    # Lista de tuplas (Especialidade, Grande Area do card)
+    lista_cards = list(zip(df_cards['especialidade'], df_cards['grande_area']))
     
     cols = st.columns(2)
-    for i, especialidade in enumerate(lista_especialidades_ordenada):
+    for i, (especialidade, grande_area_card) in enumerate(lista_cards):
         if not especialidade: continue
         
-        # Filtra o DataFrame original para pegar dados dessa especialidade (para calcular progresso)
-        df_esp = df[df['especialidade'] == especialidade]
+        # FILTRO IMPORTANTE: 
+        # Filtra por especialidade E pela grande área do card para evitar mistura
+        df_esp = df[(df['especialidade'] == especialidade) & (df['grande_area'] == grande_area_card)]
+        
         if df_esp.empty: continue
         
-        grande_area = df_esp.iloc[0]['grande_area']
-        # Corrigindo a busca da cor (removendo espaços extras se houver e garantindo match)
-        cor_card = CORES_AREAS.get(grande_area.strip(), COR_DEFAULT_AREA)
+        # Cálculos
+        feitos = df_esp[nome_coluna].apply(limpar_booleano).sum()
+        pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
         
-        glow_style = f"color: white; text-shadow: 0 0 10px {cor_card}cc, 0 0 5px {cor_card}80;"
+        # Lógica de Cor: Só colore se tiver progresso > 0
+        if pct_d > 0:
+            cor_fundo = CORES_AREAS.get(grande_area_card, COR_PRINCIPAL)
+            cor_texto_titulo = "white"
+            sombra = f"text-shadow: 0 0 10px {cor_fundo}cc;"
+        else:
+            cor_fundo = COR_INATIVO
+            cor_texto_titulo = COR_TEXTO_INATIVO
+            sombra = ""
 
         with cols[i % 2]:
             with st.container(border=True):
-                feitos = df_esp[nome_coluna].apply(limpar_booleano).sum()
-                pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
-                
-                # Título com a cor da área
-                style = f"background: {cor_card}; padding: 5px 10px; border-radius: 5px; {glow_style}"
+                style = f"background: {cor_fundo}; padding: 5px 10px; border-radius: 5px; color: {cor_texto_titulo}; {sombra}"
                 
                 st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{especialidade}</h4>", unsafe_allow_html=True)
-                st.caption(f"{grande_area}")
+                st.caption(f"{grande_area_card}")
                 st.progress(pct_d)
                 
                 ct, cb = st.columns([0.6, 0.4])
                 ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_esp)})")
-                if cb.button("Abrir ➝", key=f"b_{especialidade}"): ir_para_disciplina(especialidade)
+                if cb.button("Abrir ➝", key=f"b_{especialidade}_{grande_area_card}"): ir_para_disciplina(especialidade)
 
 def pagina_focus():
     gc = get_gspread_client()
@@ -802,6 +813,11 @@ def pagina_focus():
     
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
+    
+    # Limpeza aqui também
+    if 'grande_area' in df.columns:
+        df['grande_area'] = df['grande_area'].astype(str).str.strip()
+
     df['original_row_idx'] = df.index 
     
     user = st.session_state['usuario_atual']
@@ -816,12 +832,9 @@ def pagina_focus():
     df_active = df[df['especialidade'] == especialidade_ativa].copy()
     
     grande_area = df_active.iloc[0]['grande_area'] if not df_active.empty else "Geral"
-    # Garante que a cor seja encontrada
-    cor_area = CORES_AREAS.get(grande_area.strip(), COR_PRINCIPAL)
+    cor_area = CORES_AREAS.get(grande_area, COR_PRINCIPAL)
     glow = f"color: white; text-shadow: 0 0 12px {cor_area}, 0 0 6px {cor_area}80;"
 
-    # --- MODIFICAÇÃO: Injeção de CSS para cor da barra de progresso ---
-    # Isso sobrescreve a cor padrão apenas nesta página
     st.markdown(f"""
         <style>
         .stProgress > div > div > div > div {{
@@ -834,7 +847,6 @@ def pagina_focus():
     with cb:
         if st.button("⬅ Voltar"): ir_para_dashboard()
     with ct:
-        # Título com a cor da área
         st.markdown(f"<h2 style='background: {cor_area}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>📖 {especialidade_ativa}</h2>", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
