@@ -22,7 +22,7 @@ PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1-i82jvSfNzG2Ri7fu3vmOFnI
 WORKSHEET_NAME = "novas_aulas" 
 COR_PRINCIPAL = "#bf7000" 
 
-# Mapeamento de Cores (Certifique-se que o nome no Excel bate com a chave aqui)
+# Mapeamento de Cores
 CORES_AREAS = {
     "Clínica Médica": "#ade082",
     "Ginecologia": "#e082c6",
@@ -30,9 +30,9 @@ CORES_AREAS = {
     "Preventiva": "#90d3f1",
     "Cirurgia": "#f1a790"
 }
-# Cor para disciplinas não iniciadas (Cinza)
-COR_INATIVO = "#e0e0e0"
-COR_TEXTO_INATIVO = "#555555"
+# Cores de UI
+COR_TEXTO_ATIVO = "white"
+COR_TEXTO_INATIVO = "#444444"
 
 # CSS Personalizado
 st.markdown(f"""
@@ -232,14 +232,21 @@ def registrar_acesso(worksheet, df, username, disciplina, row_idx):
     except Exception as e:
         print(f"Erro log: {e}")
 
-def obter_ultima_disciplina(df, username):
-    if 'LastSeen' not in df.columns or df.empty: return None
+def obter_dados_ultima_interacao(df, username):
+    """
+    Retorna uma tupla (especialidade, grande_area) baseada no registro mais recente.
+    Resolve o problema de disciplinas com mesmo nome em áreas diferentes.
+    """
+    if 'LastSeen' not in df.columns or df.empty: return None, None
     tag = str(username).upper()
-    ultima_data = None
-    ultima_disciplina = None
-    series_logs = df['LastSeen'].astype(str)
     
-    for val in series_logs:
+    ultima_data = None
+    ultima_esp = None
+    ultima_area = None
+    
+    # Itera sobre todas as linhas para verificar logs individuais
+    for idx, row in df.iterrows():
+        val = str(row['LastSeen'])
         if tag in val:
             partes = val.split(';')
             for log in partes:
@@ -248,15 +255,18 @@ def obter_ultima_disciplina(df, username):
                         dados = log.split('_')
                         if len(dados) >= 4:
                             data_str = f"{dados[1]}_{dados[2]}"
-                            disc_nome = dados[3]
                             data_obj = datetime.strptime(data_str, "%d/%m/%Y_%H:%M")
+                            
+                            # Se for a data mais recente encontrada até agora
                             if ultima_data is None or data_obj > ultima_data:
                                 ultima_data = data_obj
-                                ultima_disciplina = disc_nome
+                                ultima_esp = row['especialidade']
+                                ultima_area = row['grande_area']
                     except: continue
-    if ultima_disciplina:
-        return ultima_disciplina.title()
-    return None
+                    
+    if ultima_esp and ultima_area:
+        return ultima_esp, ultima_area
+    return None, None
 
 def identificar_colunas_usuarios(df):
     cols_sistema = ['cod_aula', 'grande_area', 'especialidade', 'tema_maior', 'titulo_aula', 'semana_media', 'LastSeen', 'Link', 'ID', 'Material']
@@ -324,6 +334,7 @@ def extrair_horas_gerais(df):
 
 if 'pagina_atual' not in st.session_state: st.session_state['pagina_atual'] = 'home'
 if 'disciplina_ativa' not in st.session_state: st.session_state['disciplina_ativa'] = None
+if 'area_ativa' not in st.session_state: st.session_state['area_ativa'] = None # NOVA VARIÁVEL DE ESTADO
 if 'logado' not in st.session_state: st.session_state['logado'] = False
 if 'usuario_atual' not in st.session_state: st.session_state['usuario_atual'] = None
 
@@ -335,9 +346,11 @@ def ir_para_home():
     st.session_state['pagina_atual'] = 'home'
     st.rerun()
 
-def ir_para_disciplina(disciplina):
+# ATUALIZADO: Recebe agora a área também
+def ir_para_disciplina(disciplina, area):
     st.session_state['pagina_atual'] = 'focus'
     st.session_state['disciplina_ativa'] = disciplina
+    st.session_state['area_ativa'] = area
     st.rerun()
     
 def ir_para_perfil():
@@ -421,7 +434,6 @@ def pagina_inicial():
     worksheet = sh.worksheet(WORKSHEET_NAME)
     df = pd.DataFrame(worksheet.get_all_records())
     
-    # Tratamento inicial: Limpar espaços das Grandes Áreas
     if 'grande_area' in df.columns:
         df['grande_area'] = df['grande_area'].astype(str).str.strip()
 
@@ -671,7 +683,6 @@ def pagina_dashboard():
     worksheet = sh.worksheet(WORKSHEET_NAME)
     df = pd.DataFrame(worksheet.get_all_records())
     
-    # TRATAMENTO FUNDAMENTAL: Limpar espaços em branco das áreas
     if 'grande_area' in df.columns:
         df['grande_area'] = df['grande_area'].astype(str).str.strip()
     
@@ -727,16 +738,16 @@ def pagina_dashboard():
 
     st.markdown("<hr style='margin: 25px 0;'>", unsafe_allow_html=True)
     
-    # --- BOTÃO CONTINUAR DE ONDE PAROU (REINSERIDO) ---
-    ultima_disc = obter_ultima_disciplina(df, username)
-    if ultima_disc:
-        # Tenta achar a especialidade na lista
-        validas = [d for d in df['especialidade'].unique() if d]
-        match = next((d for d in validas if d.upper().strip() == ultima_disc.upper().strip()), None)
-        if match:
+    # --- BOTÃO CONTINUAR DE ONDE PAROU ---
+    ult_esp, ult_area = obter_dados_ultima_interacao(df, username)
+    
+    if ult_esp and ult_area:
+        # Verifica se essa combinação ainda existe no DF atual
+        match = df[(df['especialidade'] == ult_esp) & (df['grande_area'] == ult_area)]
+        if not match.empty:
             st.markdown(f"**📍 Continuar de onde parou:**")
-            if st.button(f"🎬 Ir para {match}", type="primary"):
-                ir_para_disciplina(match)
+            if st.button(f"🎬 Ir para {ult_esp} ({ult_area})", type="primary"):
+                ir_para_disciplina(ult_esp, ult_area)
             st.markdown("<br>", unsafe_allow_html=True)
 
     col = df[nome_coluna].apply(limpar_booleano)
@@ -762,19 +773,18 @@ def pagina_dashboard():
     else:
         df_filtrado = df.copy()
 
-    # Prepara a lista de cards (Especialidades) baseada no filtro
-    df_cards = df_filtrado.drop_duplicates(subset=['especialidade'])
+    # Cards únicos baseados em (Especialidade + Grande Área)
+    df_cards = df_filtrado.drop_duplicates(subset=['especialidade', 'grande_area'])
     df_cards = df_cards.sort_values(by=['grande_area', 'especialidade'])
     
-    # Lista de tuplas (Especialidade, Grande Area do card)
+    # Lista de tuplas para iteração
     lista_cards = list(zip(df_cards['especialidade'], df_cards['grande_area']))
     
     cols = st.columns(2)
     for i, (especialidade, grande_area_card) in enumerate(lista_cards):
         if not especialidade: continue
         
-        # FILTRO IMPORTANTE: 
-        # Filtra por especialidade E pela grande área do card para evitar mistura
+        # FILTRO EXATO: Especialidade + Grande Área
         df_esp = df[(df['especialidade'] == especialidade) & (df['grande_area'] == grande_area_card)]
         
         if df_esp.empty: continue
@@ -783,27 +793,29 @@ def pagina_dashboard():
         feitos = df_esp[nome_coluna].apply(limpar_booleano).sum()
         pct_d = feitos / len(df_esp) if len(df_esp) > 0 else 0
         
-        # Lógica de Cor: Só colore se tiver progresso > 0
+        # Cor de Fundo da Área (usada para ativo ou detalhe do inativo)
+        cor_area = CORES_AREAS.get(grande_area_card, COR_PRINCIPAL)
+
+        # Lógica Visual Modificada
         if pct_d > 0:
-            cor_fundo = CORES_AREAS.get(grande_area_card, COR_PRINCIPAL)
-            cor_texto_titulo = "white"
-            sombra = f"text-shadow: 0 0 10px {cor_fundo}cc;"
+            # ATIVO: Fundo colorido, texto branco
+            style = f"background: {cor_area}; padding: 5px 10px; border-radius: 5px; color: {COR_TEXTO_ATIVO}; text-shadow: 0 0 10px {cor_area}cc;"
         else:
-            cor_fundo = COR_INATIVO
-            cor_texto_titulo = COR_TEXTO_INATIVO
-            sombra = ""
+            # INATIVO: Fundo transparente, texto cinza escuro, borda esquerda colorida para identificar a área
+            style = f"background: transparent; padding: 5px 10px; padding-left: 10px; border-left: 5px solid {cor_area}; color: {COR_TEXTO_INATIVO};"
 
         with cols[i % 2]:
             with st.container(border=True):
-                style = f"background: {cor_fundo}; padding: 5px 10px; border-radius: 5px; color: {cor_texto_titulo}; {sombra}"
-                
                 st.markdown(f"<h4 style='{style} margin-bottom:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;'>{especialidade}</h4>", unsafe_allow_html=True)
                 st.caption(f"{grande_area_card}")
                 st.progress(pct_d)
                 
                 ct, cb = st.columns([0.6, 0.4])
                 ct.caption(f"{int(pct_d*100)}% ({feitos}/{len(df_esp)})")
-                if cb.button("Abrir ➝", key=f"b_{especialidade}_{grande_area_card}"): ir_para_disciplina(especialidade)
+                
+                # Chave única para o botão
+                if cb.button("Abrir ➝", key=f"b_{especialidade}_{grande_area_card}"): 
+                    ir_para_disciplina(especialidade, grande_area_card)
 
 def pagina_focus():
     gc = get_gspread_client()
@@ -814,7 +826,6 @@ def pagina_focus():
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
     
-    # Limpeza aqui também
     if 'grande_area' in df.columns:
         df['grande_area'] = df['grande_area'].astype(str).str.strip()
 
@@ -827,12 +838,20 @@ def pagina_focus():
     try: col_idx_gs = worksheet.find(nome_coluna).col
     except: return
 
-    especialidade_ativa = st.session_state['disciplina_ativa']
+    # Recupera AMBOS do session state
+    especialidade_ativa = st.session_state.get('disciplina_ativa')
+    area_ativa = st.session_state.get('area_ativa')
 
-    df_active = df[df['especialidade'] == especialidade_ativa].copy()
+    # Filtra usando AMBOS os critérios
+    if area_ativa:
+        df_active = df[(df['especialidade'] == especialidade_ativa) & (df['grande_area'] == area_ativa)].copy()
+    else:
+        # Fallback caso algo dê errado no state (não deve acontecer com o novo fluxo)
+        df_active = df[df['especialidade'] == especialidade_ativa].copy()
     
-    grande_area = df_active.iloc[0]['grande_area'] if not df_active.empty else "Geral"
-    cor_area = CORES_AREAS.get(grande_area, COR_PRINCIPAL)
+    # Define cores baseado na área ativa
+    grande_area = area_ativa if area_ativa else (df_active.iloc[0]['grande_area'] if not df_active.empty else "Geral")
+    cor_area = CORES_AREAS.get(grande_area.strip(), COR_PRINCIPAL)
     glow = f"color: white; text-shadow: 0 0 12px {cor_area}, 0 0 6px {cor_area}80;"
 
     st.markdown(f"""
@@ -848,6 +867,7 @@ def pagina_focus():
         if st.button("⬅ Voltar"): ir_para_dashboard()
     with ct:
         st.markdown(f"<h2 style='background: {cor_area}; padding: 8px 15px; border-radius: 10px; {glow} text-align:center;'>📖 {especialidade_ativa}</h2>", unsafe_allow_html=True)
+        st.markdown(f"<p style='text-align:center; color:#666; margin-top:-10px; font-size:12px;'>{grande_area}</p>", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
