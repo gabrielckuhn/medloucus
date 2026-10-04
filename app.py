@@ -433,7 +433,11 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
 .info{min-width:0;}
 .nome{font-family:'Barlow Condensed',sans-serif;font-weight:700;line-height:1.02;
   font-size:clamp(22px,4vh,58px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.meta{color:var(--apagado);font-size:clamp(13px,1.9vh,26px);margin-top:.3vh;}
+.meta{color:var(--apagado);font-size:clamp(13px,1.9vh,26px);margin-top:.4vh;
+  display:flex;align-items:baseline;flex-wrap:wrap;column-gap:.8em;}
+.votos{font-family:'Barlow Condensed',sans-serif;font-weight:700;color:var(--tecla);
+  font-size:clamp(20px,3.4vh,48px);line-height:1;font-variant-numeric:tabular-nums;}
+.votos small{font-family:'Barlow',sans-serif;font-weight:500;font-size:.5em;color:var(--tecla);opacity:.85;}
 .meta .tag{display:inline-block;margin-left:.6em;padding:.05em .5em;border-radius:6px;
   background:var(--confirma);color:var(--tinta);font-weight:600;}
 .meta .tag.alerta{background:var(--corrige);}
@@ -489,7 +493,7 @@ def html_cand(c: dict, pos: int) -> str:
       <div class="foto" style="{foto_css}">{escape(iniciais(c['nome']))}</div>
       <div class="info">
         <div class="nome">{escape(c['nome'])}</div>
-        <div class="meta">{partido_num} &nbsp; {fmt_int(c['votos'])} votos{tag}</div>
+        <div class="meta"><span class="votos">{fmt_int(c['votos'])}<small> votos</small></span>{partido_num}{tag}</div>
         <div class="barra"><i style="width:{largura:.2f}%"></i></div>
       </div>
       <div class="pct">{fmt_pct(c['pct'])}<small>%</small></div>
