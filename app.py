@@ -415,6 +415,16 @@ def carregar_estados(cargo: str) -> dict:
         return {uf: {"dados": d, "erro": e} for uf, d, e in ex.map(um, ufs)}
 
 
+# eleitorado aproximado (só para o modo demo; os dados reais vêm do TSE)
+ELEITORADO_DEMO = {
+    "sp": 34_700_000, "mg": 16_300_000, "rj": 12_800_000, "ba": 11_300_000, "rs": 8_600_000, "pr": 8_500_000,
+    "pe": 7_000_000, "ce": 6_800_000, "pa": 6_100_000, "sc": 5_500_000, "ma": 5_000_000, "go": 4_900_000,
+    "pb": 3_000_000, "es": 2_900_000, "am": 2_600_000, "pi": 2_600_000, "mt": 2_500_000, "rn": 2_500_000,
+    "al": 2_300_000, "df": 2_200_000, "ms": 2_000_000, "se": 1_740_000, "ro": 1_200_000, "to": 1_100_000,
+    "zz": 700_000, "ac": 600_000, "ap": 550_000, "rr": 370_000,
+}
+
+
 def carregar_estados_demo(cargo: str) -> dict:
     rnd = random.Random(42 + len(cargo))
     _, _, _, exterior = CARGOS_UF[cargo]
@@ -430,14 +440,155 @@ def carregar_estados_demo(cargo: str) -> dict:
                 a, b = b, a
         else:
             a, b = rnd.sample(falsos, 2)
-        pa = rnd.uniform(38, 62)
-        pb = rnd.uniform(25, pa - 1)
+        pa = rnd.uniform(38, 58)
+        pb = rnd.uniform(25, min(pa - 1, 96 - pa))
+        pc_resto = 100 - pa - pb
         pst = min(100.0, rnd.uniform(10, 40) + t * 0.4)
-        top = [{"nome": n, "numero": num_, "partido": p, "pct": pc + rnd.uniform(-.2, .2),
-                "votos": int(pc * 1000), "situacao": "", "eleito": False, "foto": ""}
-               for (n, num_, p), pc in ((a, pa), (b, pb))]
-        out[uf] = {"dados": {"pst": pst, "secoes": (0, 0), "atualizado": "", "top": top}, "erro": None}
+        eleit = ELEITORADO_DEMO.get(uf, 1_000_000)
+        eleit_tot = int(eleit * pst / 100)
+        validos = int(eleit_tot * 0.76)
+        trio = ((a, pa), (b, pb), (("OUTROS (DEMO)", "70", "AVANTE"), pc_resto))
+        top = [{"nome": n, "numero": num_, "partido": p, "pct": pc,
+                "votos": int(validos * pc / 100), "situacao": "", "eleito": False, "foto": ""}
+               for (n, num_, p), pc in trio]
+        totais = {"eleitorado": eleit, "eleitorado_totalizado": eleit_tot, "validos": validos,
+                  "sub_judice": 0, "restante_max": eleit - eleit_tot}
+        out[uf] = {"dados": {"pst": pst, "secoes": (0, 0), "atualizado": "", "top": top, "totais": totais},
+                   "erro": None}
     return out
+
+
+def projetar(blocos: dict) -> dict:
+    """Projeção do 1º turno presidencial para 100% das urnas.
+
+    Em cada UF, mantém o % de cada candidato e escala os votos válidos já apurados pelo
+    eleitorado: fator = eleitorado apto total / eleitorado apto das seções totalizadas
+    (se faltar esse dado, usa 100 / % de seções). UFs ainda sem votos entram com o
+    eleitorado × taxa nacional de votos válidos, divididos pelo % nacional atual.
+    """
+    cands, ufs = {}, []
+    soma_validos_agora = soma_validos_proj = 0.0
+    soma_eleit = soma_eleit_tot = 0.0
+    sem_dado = []
+
+    def chave_c(c):
+        return c["numero"] or c["nome"]
+
+    for uf, bloco in blocos.items():
+        d = bloco["dados"]
+        tot = (d or {}).get("totais") or {}
+        validos_c = [c for c in (d or {}).get("top", []) if "sub judice" not in c["situacao"].lower()]
+        validos = float(sum(c["votos"] for c in validos_c))
+        eleit, eleit_tot = float(tot.get("eleitorado") or 0), float(tot.get("eleitorado_totalizado") or 0)
+        if eleit_tot > 0 and eleit >= eleit_tot:
+            fator = eleit / eleit_tot
+        elif d and d["pst"] > 0:
+            fator = 100.0 / d["pst"]
+        else:
+            fator = None
+        if not validos or fator is None:
+            sem_dado.append((uf, eleit))
+            continue
+        soma_eleit += eleit
+        soma_eleit_tot += eleit_tot
+        soma_validos_agora += validos
+        soma_validos_proj += validos * fator
+        linha = {"uf": uf, "pst": d["pst"], "fator": fator, "validos_proj": validos * fator, "votos": {}}
+        for c in validos_c:
+            k = chave_c(c)
+            reg = cands.setdefault(k, {"nome": c["nome"], "partido": c["partido"], "numero": c["numero"],
+                                       "agora": 0.0, "proj": 0.0})
+            reg["agora"] += c["votos"]
+            reg["proj"] += c["votos"] * fator
+            linha["votos"][k] = c["votos"] * fator
+        ufs.append(linha)
+
+    # UFs sem nenhum voto ainda: estimativa pela média nacional
+    if sem_dado and soma_validos_agora:
+        taxa_validos = soma_validos_agora / soma_eleit_tot if soma_eleit_tot else 0
+        for uf, eleit in sem_dado:
+            if not (eleit and taxa_validos):
+                continue
+            v = eleit * taxa_validos
+            soma_validos_proj += v
+            soma_eleit += eleit
+            linha = {"uf": uf, "pst": 0.0, "fator": None, "validos_proj": v, "votos": {}, "estimada": True}
+            for k, reg in cands.items():
+                share = reg["agora"] / soma_validos_agora
+                reg["proj"] += v * share
+                linha["votos"][k] = v * share
+            ufs.append(linha)
+
+    ranking = sorted(cands.items(), key=lambda kv: -kv[1]["proj"])
+    for _, reg in ranking:
+        reg["pct_proj"] = 100 * reg["proj"] / soma_validos_proj if soma_validos_proj else 0
+        reg["pct_agora"] = 100 * reg["agora"] / soma_validos_agora if soma_validos_agora else 0
+    return {
+        "ranking": ranking, "ufs": ufs, "validos_proj": soma_validos_proj, "validos_agora": soma_validos_agora,
+        "eleitorado_apurado": 100 * soma_eleit_tot / soma_eleit if soma_eleit else 0,
+        "ufs_sem_dado": [u for u, _ in sem_dado],
+    }
+
+
+def html_projecao(proj: dict) -> str:
+    ranking = proj["ranking"]
+    if not ranking:
+        return '<div class="vazio" style="height:60vh">Ainda não há votos suficientes para projetar.</div>'
+    lider_k, lider = ranking[0]
+    if lider["pct_proj"] > 50:
+        veredito = f'<b style="color:{opcoes_cor(lider["partido"])[0]}">{escape(lider["nome"])}</b> venceria no 1º turno'
+    elif len(ranking) > 1:
+        seg = ranking[1][1]
+        veredito = (f'2º turno entre <b style="color:{opcoes_cor(lider["partido"])[0]}">{escape(lider["nome"])}</b> '
+                    f'e <b style="color:{opcoes_cor(seg["partido"])[0]}">{escape(seg["nome"])}</b>')
+    else:
+        veredito = ""
+    maior = max(r["pct_proj"] for _, r in ranking) or 1
+    linhas = []
+    for k, r in ranking[:8]:
+        cor = opcoes_cor(r["partido"])[0]
+        var = r["pct_proj"] - r["pct_agora"]
+        linhas.append(
+            f'<div class="pj-lin" style="--c:{cor}">'
+            f'<div class="pj-nm">{escape(r["nome"])}<small>{escape(r["partido"])} – {escape(r["numero"])}</small></div>'
+            f'<div class="pj-pc">{fmt_pct(r["pct_proj"])}<small>%</small></div>'
+            f'<div class="pj-barra"><i style="width:{min(100, r["pct_proj"]):.2f}%"></i><b style="left:50%"></b></div>'
+            f'<div class="pj-vt">{fmt_int(round(r["proj"]))} votos projetados'
+            f'<span>agora {fmt_pct(r["pct_agora"])}% ({"+" if var >= 0 else "−"}{fmt_pct(abs(var))} p.p.)</span></div>'
+            f'</div>')
+
+    # saldo por UF entre os dois primeiros da projeção
+    tabela = ""
+    if len(ranking) > 1:
+        k1, r1 = ranking[0]
+        k2, r2 = ranking[1]
+        c1, c2 = opcoes_cor(r1["partido"])[0], opcoes_cor(r2["partido"])[0]
+        ufs = sorted(proj["ufs"], key=lambda u: -(u["votos"].get(k1, 0) - u["votos"].get(k2, 0)))
+        cab = (f'<div class="pj-uf cabeca"><span>UF</span><span>Apurado</span><span>Válidos proj.</span>'
+               f'<span>Saldo {escape(r1["nome"].split()[0].title())} × {escape(r2["nome"].split()[0].title())}</span></div>')
+        corpo = []
+        for u in ufs:
+            saldo = u["votos"].get(k1, 0) - u["votos"].get(k2, 0)
+            cor = c1 if saldo >= 0 else c2
+            sg = "EXT" if u["uf"] == "zz" else u["uf"].upper()
+            ap = "estimada" if u.get("estimada") else f'{fmt_pct(u["pst"])}%'
+            corpo.append(f'<div class="pj-uf"><span class="sg">{sg}</span><span>{ap}</span>'
+                         f'<span>{fmt_int(round(u["validos_proj"]))}</span>'
+                         f'<span class="sd" style="color:{cor}">{"+" if saldo >= 0 else "−"}{fmt_int(round(abs(saldo)))}</span></div>')
+        tabela = f'<div class="pj-tab">{cab}<div class="pj-rolo">{"".join(corpo)}</div></div>'
+
+    nota = (f'Mantém o % de cada candidato em cada UF e escala os votos válidos pelo eleitorado que falta apurar. '
+            f'Eleitorado já apurado: {fmt_pct(proj["eleitorado_apurado"])}%. '
+            f'Válidos projetados no país: {fmt_int(round(proj["validos_proj"]))}.')
+    if proj["ufs_sem_dado"]:
+        nota += f' Sem votos ainda (estimadas pela média nacional): {", ".join(u.upper() for u in proj["ufs_sem_dado"])}.'
+    nota += ' É uma estimativa: as seções que faltam em cada UF podem votar diferente das já apuradas.'
+    return (f'<div class="pj"><div class="pj-esq"><div class="pj-ver">Projeção para 100% das urnas: {veredito}</div>'
+            f'{"".join(linhas)}<div class="pj-nota">{escape(nota)}</div></div>{tabela}</div>')
+
+
+def alternar_projecao():
+    st.session_state.proj = not st.session_state.get("proj", False)
 
 
 def tela_diagnostico():
@@ -685,6 +836,36 @@ div[class*="st-key-card-mini-"] .urnas small{font-size:clamp(11px,1.3vh,18px);}
 .meta .tag{background:#F5C542!important;color:var(--tinta)!important;}
 .meta .tag.alerta{background:var(--corrige)!important;}
 
+/* projeção */
+div[class*="st-key-aba-"][class*="-proj"]{margin-left:.8vw;}
+.pj{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:1.6vw;height:calc(var(--area) - 6.4vh);}
+.pj-esq{display:flex;flex-direction:column;gap:1.3vh;min-height:0;overflow:hidden;}
+.pj-ver{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(20px,3.6vh,50px);line-height:1.1;}
+.pj-ver b{font-weight:800;}
+.pj-lin{--c:var(--tecla);display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:1vw;row-gap:.4vh;
+  border-left:5px solid var(--c);padding-left:.9vw;}
+.pj-nm{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(18px,3.2vh,44px);line-height:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:end;}
+.pj-nm small{font-family:'Barlow',sans-serif;font-weight:500;color:var(--apagado);font-size:.5em;margin-left:.6em;}
+.pj-pc{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(28px,5.4vh,76px);line-height:.9;
+  color:var(--c);grid-row:1/3;grid-column:2;align-self:center;font-variant-numeric:tabular-nums;}
+.pj-pc small{font-size:.45em;}
+.pj-barra{position:relative;height:1vh;min-height:6px;background:var(--linha);border-radius:99px;}
+.pj-barra i{display:block;height:100%;background:var(--c);border-radius:99px;}
+.pj-barra b{position:absolute;top:-.5vh;bottom:-.5vh;width:2px;background:var(--tecla);opacity:.7;}
+.pj-vt{grid-column:1/3;color:var(--tecla);font-size:clamp(12px,1.9vh,26px);font-variant-numeric:tabular-nums;}
+.pj-vt span{color:var(--apagado);margin-left:1em;}
+.pj-nota{margin-top:auto;color:var(--apagado);font-size:clamp(11px,1.5vh,20px);line-height:1.35;max-width:75ch;}
+.pj-tab{background:var(--painel);border:1px solid var(--linha);border-radius:12px;padding:1.2vh 1vw;
+  display:flex;flex-direction:column;min-height:0;}
+.pj-rolo{overflow-y:auto;min-height:0;}
+.pj-uf{display:grid;grid-template-columns:3.2em 1fr 1.4fr 1.6fr;column-gap:.8vw;align-items:baseline;
+  padding:.28vh 0;border-bottom:1px solid var(--linha);font-size:clamp(12px,1.8vh,25px);font-variant-numeric:tabular-nums;}
+.pj-uf span:not(:first-child){text-align:right;}
+.pj-uf .sg{font-family:'Barlow Condensed',sans-serif;font-weight:800;}
+.pj-uf .sd{font-family:'Barlow Condensed',sans-serif;font-weight:700;}
+.pj-uf.cabeca{color:var(--apagado);font-size:clamp(11px,1.5vh,20px);border-bottom-color:var(--apagado);}
+
 /* visão por estado */
 .st-key-filtro{gap:.6vw!important;margin:1.2vh 0 1vh!important;align-items:center!important;flex-wrap:nowrap!important;}
 .st-key-filtro [data-testid="stElementContainer"]{width:auto!important;}
@@ -716,6 +897,7 @@ div[class*="st-key-card-mini-"] .urnas small{font-size:clamp(11px,1.3vh,18px);}
 .uf.sem .ld{color:var(--apagado);font-weight:500;}
 
 @media (max-width:900px){
+  .pj{grid-template-columns:1fr;height:auto;}
   .ufs{grid-template-columns:repeat(3,minmax(0,1fr));height:auto;grid-auto-rows:auto;}
   .st-key-topo{height:auto;flex-wrap:wrap!important;}
   div[class*="st-key-card-"]{height:auto!important;min-height:30vh;}
@@ -1075,8 +1257,14 @@ def visao_estados():
         for chave, (texto, *_) in CARGOS_UF.items():
             estado = "on" if cargo == chave else "off"
             st.button(texto, key=f"aba-{estado}-uf-{chave}", on_click=escolher_cargo_uf, args=(chave,))
+        projecao = cargo == "pres" and st.session_state.get("proj", False)
+        if cargo == "pres":
+            st.button("Projeção", key=f"aba-{'on' if projecao else 'off'}-proj", on_click=alternar_projecao)
         st.markdown(compactar(resumo), unsafe_allow_html=True)
-    st.markdown(compactar(grade), unsafe_allow_html=True)
+    if projecao:
+        st.markdown(compactar(html_projecao(projetar(blocos))), unsafe_allow_html=True)
+    else:
+        st.markdown(compactar(grade), unsafe_allow_html=True)
 
 
 @st.fragment(run_every=REFRESH_S)
