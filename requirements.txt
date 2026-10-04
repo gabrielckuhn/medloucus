@@ -1,9 +1,2 @@
-streamlit
-pandas
-gspread
-google-auth
-plotly
-streamlit-authenticator
-bcrypt
-streamlit-cropper
-Pillow
+streamlit>=1.37
+requests
