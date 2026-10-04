@@ -259,7 +259,7 @@ def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
         "pst": pst,
         "secoes": (int(totalizadas), int(total)),
         "atualizado": f"{data} {hora}".strip(),
-        "top": cands[:2],
+        "top": cands[:3],
     }
 
 
@@ -344,10 +344,14 @@ def tela_diagnostico():
 
 # ───────────────────────── MODO DEMO ─────────────────────────
 DEMO_BASE = {
-    "pres": [("FLAVIO BOLSONARO", "22", "PL", 51.07), ("LULA", "13", "PT", 40.82)],
-    "gov": [("FÁBIO", "55", "PSD", 58.77), ("VALMIR DE FRANCISQUINHO", "10", "REPUBLICANOS", 36.71)],
-    "sen": [("ROGERIO CARVALHO", "131", "PT", 20.65), ("DELEGADO ALESSANDRO", "155", "MDB", 18.19)],
-    "depf": [("CLAUDIO MITIDIERI", "4040", "PSB", 7.89), ("JOAO DANIEL", "1311", "PT", 7.68)],
+    "pres": [("FLAVIO BOLSONARO", "22", "PL", 51.07), ("LULA", "13", "PT", 40.82),
+             ("ESCRITOR AUGUSTO CURY", "70", "AVANTE", 2.94)],
+    "gov": [("FÁBIO", "55", "PSD", 58.77), ("VALMIR DE FRANCISQUINHO", "10", "REPUBLICANOS", 36.71),
+            ("DR. HELTON", "50", "PSOL", 4.27)],
+    "sen": [("ROGERIO CARVALHO", "131", "PT", 20.65), ("DELEGADO ALESSANDRO", "155", "MDB", 18.19),
+            ("DELEGADO ANDRÉ DAVID", "101", "REPUBLICANOS", 17.87)],
+    "depf": [("CLAUDIO MITIDIERI", "4040", "PSB", 7.89), ("JOAO DANIEL", "1311", "PT", 7.68),
+             ("YANDRA MOURA", "4444", "UNIÃO", 6.93)],
 }
 
 
@@ -423,13 +427,12 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
 .trilho{height:1vh;min-height:6px;background:var(--linha);border-radius:99px;overflow:hidden;}
 .trilho i{display:block;height:100%;background:var(--tecla);border-radius:99px;transition:width .8s ease;}
 
-.cands{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:1vh;min-height:0;}
-.cand{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:1.1vw;}
-.foto{--c:var(--confirma);position:relative;width:clamp(48px,9vh,130px);aspect-ratio:3/4;border-radius:10px;
+.cands{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;gap:.6vh;min-height:0;}
+.cand{display:grid;grid-template-columns:auto 1fr auto;align-items:center;column-gap:1.1vw;row-gap:0;}
+.foto{position:relative;width:clamp(44px,8.2vh,120px);aspect-ratio:3/4;border-radius:10px;
   background:var(--linha);border:3px solid var(--c);overflow:hidden;display:grid;place-items:center;
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(18px,3.4vh,48px);color:var(--apagado);}
 .foto::after{content:"";position:absolute;inset:0;background-image:var(--foto);background-size:cover;background-position:center top;}
-.cand.seg .foto{--c:var(--corrige);}
 .info{min-width:0;}
 .nome{font-family:'Barlow Condensed',sans-serif;font-weight:700;line-height:1.02;
   font-size:clamp(22px,4vh,58px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -442,11 +445,14 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
   background:var(--confirma);color:var(--tinta);font-weight:600;}
 .meta .tag.alerta{background:var(--corrige);}
 .barra{height:.9vh;min-height:5px;background:var(--linha);border-radius:99px;margin-top:.8vh;overflow:hidden;}
-.barra i{display:block;height:100%;background:var(--confirma);transition:width .8s ease;}
-.cand.seg .barra i{background:var(--corrige);}
+.barra i{display:block;height:100%;background:var(--c);transition:width .8s ease;}
 .pct{font-family:'Barlow Condensed',sans-serif;font-weight:800;line-height:1;text-align:right;
-  font-size:clamp(34px,7.4vh,110px);font-variant-numeric:tabular-nums;color:var(--confirma);}
-.cand.seg .pct{color:var(--corrige);}
+  font-size:clamp(34px,7.4vh,110px);font-variant-numeric:tabular-nums;color:var(--c);}
+.cand{--c:var(--tecla);}
+.delta{grid-column:2/4;margin-top:.5vh;color:var(--apagado);font-size:clamp(13px,2vh,28px);line-height:1.15;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.delta b{font-family:'Barlow Condensed',sans-serif;font-weight:700;color:var(--tecla);font-size:1.3em;}
+.delta em{font-style:normal;color:var(--tecla);}
 .pct small{font-size:.45em;font-weight:600;}
 
 .vazio{flex:1;display:grid;place-items:center;text-align:center;color:var(--apagado);
@@ -467,6 +473,105 @@ def fmt_int(n: int) -> str:
     return f"{n:,}".replace(",", ".")
 
 
+# ───────────────────────── CORES DOS PARTIDOS ─────────────────────────
+# Cor principal primeiro; as seguintes são alternativas (usadas se a principal sumir no fundo azul
+# ou se os dois candidatos do quadro ficarem com cores parecidas).
+CORES_PARTIDO = {
+    "PT": ["#C0122D"],
+    "PSOL": ["#F2A134", "#E84C3D"],
+    "PDT": ["#1E4080", "#D32F2F"],
+    "PSB": ["#E41B23"],
+    "PCDOB": ["#009E3D"],
+    "PV": ["#00A859"],
+    "MDB": ["#009959"],
+    "PSD": ["#0054A6"],
+    "PSDB": ["#004A94", "#FFD400"],
+    "CIDADANIA": ["#2BB673"],
+    "SOLIDARIEDADE": ["#162A5B", "#F37021"],
+    "AVANTE": ["#2EABB1"],
+    "PL": ["#0F4C81", "#FFD400"],
+    "UNIAO": ["#00A0DF"],
+    "PP": ["#003366"],
+    "REPUBLICANOS": ["#005CA9", "#009E3D", "#FDC300"],
+    "PODE": ["#1D2A44", "#00A896"],
+    "NOVO": ["#FF6600"],
+    "UP": ["#000000"],
+}
+APELIDOS = {"PODEMOS": "PODE", "UNIAOBRASIL": "UNIAO", "PCB DO B": "PCDOB", "PROGRESSISTAS": "PP"}
+COR_NEUTRA = "#C9D6E5"   # partidos sem cor definida
+FUNDO_CARD = "#132F52"   # mesmo valor de --painel
+CONTRASTE_MIN = 3.0      # legível para números grandes
+
+
+def _chave_partido(sigla: str) -> str:
+    import unicodedata
+    k = unicodedata.normalize("NFKD", sigla).encode("ascii", "ignore").decode().upper()
+    k = "".join(ch for ch in k if ch.isalnum())
+    return APELIDOS.get(k, k)
+
+
+def _rgb(h: str):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _hex(rgb) -> str:
+    return "#" + "".join(f"{max(0, min(255, round(v))):02X}" for v in rgb)
+
+
+def _lum(h: str) -> float:
+    def canal(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (canal(v) for v in _rgb(h))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contraste(a: str, b: str) -> float:
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def _clarear(h: str) -> str:
+    """Sobe a luminosidade mantendo o tom e a saturação, até ficar legível no fundo do quadro."""
+    import colorsys
+    r, g, b = (v / 255 for v in _rgb(h))
+    hue, light, sat = colorsys.rgb_to_hls(r, g, b)
+    if sat < 0.08:  # preto/cinza (ex.: UP) → cinza claro
+        sat = 0.0
+    for i in range(41):
+        l2 = light + (0.92 - light) * i / 40
+        c = _hex(tuple(v * 255 for v in colorsys.hls_to_rgb(hue, l2, sat)))
+        if _contraste(c, FUNDO_CARD) >= CONTRASTE_MIN:
+            return c
+    return "#FFFFFF"
+
+
+def opcoes_cor(sigla: str) -> list[str]:
+    """Cores possíveis do partido, já legíveis, em ordem de preferência."""
+    brutas = CORES_PARTIDO.get(_chave_partido(sigla or ""), [])
+    if not brutas:
+        return [COR_NEUTRA]
+    ordem = [c if _contraste(c, FUNDO_CARD) >= CONTRASTE_MIN else _clarear(c) for c in brutas]
+    return list(dict.fromkeys(ordem))
+
+
+def _distancia(a: str, b: str) -> float:
+    return sum((x - y) ** 2 for x, y in zip(_rgb(a), _rgb(b))) ** 0.5
+
+
+def cores_do_quadro(cands: list[dict]) -> list[str]:
+    """Uma cor por candidato; se o 2º ficar parecido com o 1º, tenta a alternativa do partido."""
+    cores = []
+    for c in cands:
+        ops = opcoes_cor(c["partido"])
+        escolha = ops[0]
+        if cores and _distancia(escolha, cores[0]) < 90:
+            escolha = next((o for o in ops if _distancia(o, cores[0]) >= 90), escolha)
+        cores.append(escolha)
+    return cores
+
+
 def fmt_pct(p: float) -> str:
     return f"{p:.2f}".replace(".", ",")
 
@@ -476,7 +581,7 @@ def iniciais(nome: str) -> str:
     return "".join(p[0] for p in partes[:2]).upper() or "?"
 
 
-def html_cand(c: dict, pos: int) -> str:
+def html_cand(c: dict, cor: str, delta: str = "") -> str:
     foto_css = f"--foto:url('{escape(c['foto'])}')" if c["foto"] else ""
     situ = c["situacao"].lower()
     tag = ""
@@ -489,7 +594,7 @@ def html_cand(c: dict, pos: int) -> str:
     largura = max(0.0, min(100.0, c["pct"]))
     partido_num = " – ".join(x for x in (escape(c["partido"]), escape(c["numero"])) if x)
     return f"""
-    <div class="cand {'seg' if pos else ''}">
+    <div class="cand" style="--c:{cor}">
       <div class="foto" style="{foto_css}">{escape(iniciais(c['nome']))}</div>
       <div class="info">
         <div class="nome">{escape(c['nome'])}</div>
@@ -497,7 +602,16 @@ def html_cand(c: dict, pos: int) -> str:
         <div class="barra"><i style="width:{largura:.2f}%"></i></div>
       </div>
       <div class="pct">{fmt_pct(c['pct'])}<small>%</small></div>
+      {delta}
     </div>"""
+
+
+def html_delta(frente: dict, atras: dict) -> str:
+    d = frente["votos"] - atras["votos"]
+    nome = escape(atras["nome"])
+    if d == 0:
+        return f'<div class="delta">Empatado com <em>{nome}</em></div>'
+    return f'<div class="delta"><b>{fmt_int(d)}</b> votos a mais que <em>{nome}</em></div>'
 
 
 def html_cargo(cargo, bloco) -> str:
@@ -512,7 +626,16 @@ def html_cargo(cargo, bloco) -> str:
     sub = f"{fmt_int(tot)} de {fmt_int(total)} seções" if total else "urnas apuradas"
     if erro:
         sub = f'<span class="aviso">sem conexão — mostrando o último dado</span>'
-    cands = "".join(html_cand(c, i) for i, c in enumerate(dados["top"])) or \
+    top = dados["top"]
+    mostrados = top[:2]
+    cores = cores_do_quadro(mostrados)
+    deltas = ["", ""]
+    if len(top) >= 2:
+        deltas[0] = html_delta(top[0], top[1])
+    if chave == "sen" and len(top) >= 3:
+        # Senado 2026 tem 2 vagas: a disputa que importa é 2º × 3º
+        deltas[1] = html_delta(top[1], top[2])
+    cands = "".join(html_cand(c, cores[i], deltas[i]) for i, c in enumerate(mostrados)) or \
         '<div class="vazio">Ainda sem votos totalizados</div>'
     return f"""
     <div class="cargo">
