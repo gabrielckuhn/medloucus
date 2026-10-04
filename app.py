@@ -129,23 +129,48 @@ NOMES = {
 }
 
 
-def achar_candidatos(d) -> list:
-    """Procura a lista de candidatos ('cand') em qualquer nível do arquivo."""
+CHAVES_PARTIDO = ("sgp", "sg", "sigla", "sgpart", "partido")
+
+
+def _sigla(d: dict) -> str:
+    for k in CHAVES_PARTIDO:
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _eh_candidato(d: dict) -> bool:
+    if "vap" not in d and "pvap" not in d:
+        return False
+    if "sqcand" in d:
+        return True
+    # grupo (partido/federação) também pode ter 'vap', mas carrega listas dentro
+    return "n" in d and not any(isinstance(v, list) for v in d.values())
+
+
+def achar_candidatos(d, _sigla_herdada: str = "") -> list:
+    """Junta TODOS os candidatos do arquivo, em qualquer nível.
+
+    Em 2026 os candidatos vêm agrupados por partido/federação; pegar só a
+    primeira lista mostrava apenas o 1º grupo. Aqui o partido do grupo é
+    herdado pelo candidato quando ele não traz a sigla.
+    """
+    out = []
     if isinstance(d, dict):
-        if isinstance(d.get("cand"), list):
-            return d["cand"]
+        if _eh_candidato(d):
+            c = dict(d)
+            if _sigla_herdada and not _sigla(c):
+                c["_partido"] = _sigla_herdada
+            return [c]
+        herdada = _sigla(d) or _sigla_herdada
         for v in d.values():
-            r = achar_candidatos(v)
-            if r:
-                return r
+            if isinstance(v, (dict, list)):
+                out.extend(achar_candidatos(v, herdada))
     elif isinstance(d, list):
-        if d and isinstance(d[0], dict) and ("vap" in d[0] or "pvap" in d[0]):
-            return d
         for v in d:
-            r = achar_candidatos(v)
-            if r:
-                return r
-    return []
+            out.extend(achar_candidatos(v, _sigla_herdada))
+    return out
 
 
 def achar_dict_com(d, chave: str):
@@ -176,12 +201,24 @@ def recortar_abrangencia(raw, uf: str):
     return raw
 
 
+# Número do partido (2 primeiros dígitos do candidato) → sigla. Usado só como último recurso.
+PARTIDOS = {
+    "10": "REPUBLICANOS", "11": "PP", "12": "PDT", "13": "PT", "14": "MISSÃO", "15": "MDB", "16": "PSTU",
+    "18": "REDE", "19": "PODE", "20": "PODE", "21": "PCB", "22": "PL", "23": "CIDADANIA", "25": "PRD",
+    "27": "DC", "28": "PRTB", "29": "PCO", "30": "NOVO", "33": "PMN", "35": "DEMOCRATA", "36": "AGIR",
+    "40": "PSB", "43": "PV", "44": "UNIÃO", "45": "PSDB", "50": "PSOL", "55": "PSD", "65": "PC do B",
+    "70": "AVANTE", "77": "SOLIDARIEDADE", "80": "UP",
+}
+
+
 def partido(c: dict) -> str:
-    for k in ("sgp", "sg", "partido"):
-        if c.get(k):
-            return str(c[k])
+    sig = _sigla(c) or c.get("_partido", "")
+    if sig:
+        return str(sig)
     cc = str(c.get("cc") or "")
-    return cc.split(" - ")[0].split("(")[0].strip()[:18]
+    if cc:
+        return cc.split(" - ")[0].split("(")[0].strip()[:18]
+    return PARTIDOS.get(str(c.get("n") or "")[:2], "")
 
 
 def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
@@ -195,12 +232,16 @@ def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
         pst = 100 * totalizadas / total
 
     tabela = NOMES.get(chave, {})
-    cands = []
+    cands, vistos = [], set()
     for c in achar_candidatos(corpo):
         numero = str(c.get("n") or "")
+        ident = str(c.get("sqcand") or numero)
+        if ident in vistos:
+            continue
+        vistos.add(ident)
         nome_tab, part_tab = tabela.get(numero, ("", ""))
         cands.append({
-            "nome": str(c.get("nm") or c.get("nmu") or nome_tab or f"Candidato {numero}"),
+            "nome": str(c.get("nmu") or nome_tab or c.get("nm") or f"Candidato {numero}"),
             "numero": numero,
             "partido": partido(c) or part_tab,
             "votos": int(num(c.get("vap"))),
