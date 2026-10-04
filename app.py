@@ -222,7 +222,60 @@ def partido(c: dict) -> str:
     return PARTIDOS.get(str(c.get("n") or "")[:2], "")
 
 
-def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
+def achar_num(d, chaves: tuple[str, ...]) -> float:
+    """Primeiro valor numérico (> 0) de uma das chaves, em qualquer nível — ignorando os candidatos."""
+    if isinstance(d, dict):
+        if _eh_candidato(d):
+            return 0.0
+        for k in chaves:
+            if k in d and not isinstance(d[k], (dict, list)) and num(d[k]) > 0:
+                return num(d[k])
+        for k, v in d.items():
+            if k != "cand" and isinstance(v, (dict, list)):
+                r = achar_num(v, chaves)
+                if r:
+                    return r
+    elif isinstance(d, list):
+        for v in d:
+            r = achar_num(v, chaves)
+            if r:
+                return r
+    return 0.0
+
+
+def calcular_totais(corpo, cands: list, pst: float) -> dict:
+    """Totais da abrangência (UF ou Brasil) e o máximo de votos que ainda pode entrar."""
+    sub_judice_cands = sum(c["votos"] for c in cands if "sub judice" in c["situacao"].lower())
+    validos_cands = sum(c["votos"] for c in cands if "sub judice" not in c["situacao"].lower())
+    eleitorado = achar_num(corpo, ("te", "eleitorado"))            # eleitorado apto total
+    eleitorado_tot = achar_num(corpo, ("est", "ea"))               # apto das seções já totalizadas
+    validos = max(achar_num(corpo, ("vv",)), validos_cands)
+    sub_judice = max(achar_num(corpo, ("vansj",)), sub_judice_cands)
+    if pst >= 100:
+        restante = 0.0                                             # todas as seções totalizadas
+    elif eleitorado and eleitorado_tot and eleitorado >= eleitorado_tot:
+        restante = eleitorado - eleitorado_tot                     # cada eleitor que falta votando válido
+    else:
+        restante = None                                            # sem dado → não dá para garantir nada
+    return {"eleitorado": int(eleitorado), "eleitorado_totalizado": int(eleitorado_tot),
+            "validos": int(validos), "sub_judice": int(sub_judice),
+            "restante_max": None if restante is None else int(restante)}
+
+
+def maioria_garantida(cands: list, tot: dict) -> bool:
+    """Eleito no 1º turno com certeza matemática (CF art. 77 §2º: mais da metade dos votos válidos,
+    sem brancos e nulos). Pior caso: todo eleitor das seções que faltam vota válido em outro
+    candidato e todo voto 'anulado sub judice' é revalidado para outro candidato."""
+    if not cands or tot["restante_max"] is None:
+        return False
+    lider = cands[0]
+    if "sub judice" in lider["situacao"].lower():
+        return False
+    validos_max = tot["validos"] + tot["sub_judice"] + tot["restante_max"]
+    return validos_max > 0 and 2 * lider["votos"] > validos_max
+
+
+def normalizar(raw, chave: str, ele: int, uf: str, maioria: bool = False) -> dict:
     corpo = recortar_abrangencia(raw, uf)
 
     d_sec = achar_dict_com(corpo, "pst") or {}
@@ -253,6 +306,10 @@ def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
         })
     cands.sort(key=lambda x: (x["votos"], x["pct"]), reverse=True)
 
+    totais = calcular_totais(corpo, cands, pst)
+    if maioria and maioria_garantida(cands, totais) and not cands[0]["eleito"]:
+        cands[0]["eleito_calc"] = True     # eleito pelo cálculo, antes da proclamação do TSE
+
     d_h = achar_dict_com(raw, "hg") or achar_dict_com(raw, "ht") or {}
     hora = d_h.get("hg") or d_h.get("ht") or ""
     data = d_h.get("dg") or d_h.get("dt") or ""
@@ -261,6 +318,7 @@ def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
         "secoes": (int(totalizadas), int(total)),
         "atualizado": f"{data} {hora}".strip(),
         "top": cands[:20],
+        "totais": totais,
     }
 
 
@@ -305,7 +363,7 @@ def carregar_tudo() -> dict:
         url, raw, erros = baixar_cargo(cargo)
         if raw is not None:
             try:
-                dados = normalizar(raw, chave, ele, uf)
+                dados = normalizar(raw, chave, ele, uf, maioria=chave in ("pres", "gov"))
                 mem["dados"][chave] = dados
                 return chave, dados, None
             except Exception as e:  # noqa: BLE001
@@ -346,7 +404,7 @@ def carregar_estados(cargo: str) -> dict:
         if raw is not None:
             try:
                 tabela = "pres" if cargo == "pres" else (cargo if uf == UF else "-")
-                dados = normalizar(raw, tabela, ele, uf)
+                dados = normalizar(raw, tabela, ele, uf, maioria=(cargo == "gov"))
                 mem[chave_mem] = dados
                 return uf, dados, None
             except Exception as e:  # noqa: BLE001
@@ -403,7 +461,7 @@ def tela_diagnostico():
                     if cands:
                         st.json(cands[:2])
                     st.write("Resultado lido pelo painel:")
-                    st.json(normalizar(obj, chave, ele, uf))
+                    st.json(normalizar(obj, chave, ele, uf, maioria=chave in ("pres", "gov")))
                     break
             except Exception as e:  # noqa: BLE001
                 st.write(f"`{u}` → {type(e).__name__}: {e}")
@@ -761,7 +819,8 @@ OURO = "#F5C542"
 
 def eleito(c: dict) -> bool:
     """TSE marca o eleito com e='s' e/ou st='Eleito' ('Eleito por QP', 'Eleito por média'...)."""
-    return bool(c.get("eleito")) or str(c.get("situacao", "")).strip().lower().startswith("eleit")
+    return (bool(c.get("eleito")) or bool(c.get("eleito_calc"))
+            or str(c.get("situacao", "")).strip().lower().startswith("eleit"))
 
 
 def cor_final(c: dict, cor: str | None = None) -> str:
@@ -799,6 +858,8 @@ def html_cand(c: dict, cor: str, delta: str = "") -> str:
     tag = ""
     if c["eleito"] or situ.startswith("eleito"):
         tag = '<span class="tag">Eleito</span>'
+    elif c.get("eleito_calc"):
+        tag = '<span class="tag">Eleito no 1º turno</span>'
     elif "2º turno" in situ or "2o turno" in situ:
         tag = '<span class="tag">2º turno</span>'
     elif "sub judice" in situ:
@@ -923,6 +984,8 @@ def html_estados(cargo: str, blocos: dict) -> str:
         situ = l1["situacao"].lower()
         if l1["eleito"] or situ.startswith("eleito"):
             margem = "Eleito"
+        elif l1.get("eleito_calc"):
+            margem = "Eleito no 1º turno"
         elif "2º turno" in situ:
             margem = "Vai ao 2º turno"
         # Presidente: conta por candidato; Governador/Senador: por partido (candidatos mudam de UF para UF)
