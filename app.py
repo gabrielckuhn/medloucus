@@ -12,6 +12,7 @@ import base64
 import gzip
 import json
 import random
+import re
 import zlib
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -241,7 +242,7 @@ def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
         vistos.add(ident)
         nome_tab, part_tab = tabela.get(numero, ("", ""))
         cands.append({
-            "nome": str(c.get("nmu") or nome_tab or c.get("nm") or f"Candidato {numero}"),
+            "nome": str(c.get("nmu") or c.get("nmurna") or c.get("nu") or nome_tab or c.get("nm") or f"Candidato {numero}"),
             "numero": numero,
             "partido": partido(c) or part_tab,
             "votos": int(num(c.get("vap"))),
@@ -259,7 +260,7 @@ def normalizar(raw, chave: str, ele: int, uf: str) -> dict:
         "pst": pst,
         "secoes": (int(totalizadas), int(total)),
         "atualizado": f"{data} {hora}".strip(),
-        "top": cands[:3],
+        "top": cands[:20],
     }
 
 
@@ -315,6 +316,72 @@ def carregar_tudo() -> dict:
         return {chave: {"dados": d, "erro": e} for chave, d, e in ex.map(um, CARGOS)}
 
 
+# ───────────────────────── VISÃO POR ESTADO ─────────────────────────
+UFS = [
+    ("ac", "Acre"), ("al", "Alagoas"), ("ap", "Amapá"), ("am", "Amazonas"), ("ba", "Bahia"),
+    ("ce", "Ceará"), ("df", "Distrito Federal"), ("es", "Espírito Santo"), ("go", "Goiás"),
+    ("ma", "Maranhão"), ("mt", "Mato Grosso"), ("ms", "Mato Grosso do Sul"), ("mg", "Minas Gerais"),
+    ("pa", "Pará"), ("pb", "Paraíba"), ("pr", "Paraná"), ("pe", "Pernambuco"), ("pi", "Piauí"),
+    ("rj", "Rio de Janeiro"), ("rn", "Rio Grande do Norte"), ("rs", "Rio Grande do Sul"),
+    ("ro", "Rondônia"), ("rr", "Roraima"), ("sc", "Santa Catarina"), ("sp", "São Paulo"),
+    ("se", "Sergipe"), ("to", "Tocantins"),
+]
+# cargo da visão por estado → (rótulo, eleição, código do cargo, inclui exterior?)
+CARGOS_UF = {
+    "pres": ("Presidente", ELE_FEDERAL, 1, True),
+    "gov": ("Governador", ELE_ESTADUAL, 3, False),
+    "sen": ("Senador", ELE_ESTADUAL, 5, False),
+}
+
+
+def carregar_estados(cargo: str) -> dict:
+    """Baixa o cargo escolhido em todas as UFs (em paralelo). Volta {uf: {"dados", "erro"}}."""
+    _, ele, cod, exterior = CARGOS_UF[cargo]
+    ufs = [u for u, _ in UFS] + (["zz"] if exterior else [])
+    mem = ultimo_bom().setdefault("ufs", {})
+
+    def um(uf):
+        chave_mem = f"{cargo}-{uf}"
+        _, raw, erros = baixar_cargo((chave_mem, "", "", ele, uf, cod))
+        if raw is not None:
+            try:
+                tabela = "pres" if cargo == "pres" else (cargo if uf == UF else "-")
+                dados = normalizar(raw, tabela, ele, uf)
+                mem[chave_mem] = dados
+                return uf, dados, None
+            except Exception as e:  # noqa: BLE001
+                erros = [f"{type(e).__name__}"]
+        return uf, mem.get(chave_mem), (erros[0] if erros else "erro")
+
+    with ThreadPoolExecutor(max_workers=14) as ex:
+        return {uf: {"dados": d, "erro": e} for uf, d, e in ex.map(um, ufs)}
+
+
+def carregar_estados_demo(cargo: str) -> dict:
+    rnd = random.Random(42 + len(cargo))
+    _, _, _, exterior = CARGOS_UF[cargo]
+    ufs = [u for u, _ in UFS] + (["zz"] if exterior else [])
+    t = (time.time() / REFRESH_S) % 200
+    falsos = [("CANDIDATA ALFA", "11", "PP"), ("CANDIDATO BETA", "13", "PT"), ("CANDIDATO GAMA", "55", "PSD"),
+              ("CANDIDATA DELTA", "44", "UNIÃO"), ("CANDIDATO ÉPSILON", "15", "MDB"), ("CANDIDATO ZETA", "22", "PL")]
+    out = {}
+    for uf in ufs:
+        if cargo == "pres":
+            a, b = ("FLAVIO BOLSONARO", "22", "PL"), ("LULA", "13", "PT")
+            if rnd.random() < 0.45:
+                a, b = b, a
+        else:
+            a, b = rnd.sample(falsos, 2)
+        pa = rnd.uniform(38, 62)
+        pb = rnd.uniform(25, pa - 1)
+        pst = min(100.0, rnd.uniform(10, 40) + t * 0.4)
+        top = [{"nome": n, "numero": num_, "partido": p, "pct": pc + rnd.uniform(-.2, .2),
+                "votos": int(pc * 1000), "situacao": "", "eleito": False, "foto": ""}
+               for (n, num_, p), pc in ((a, pa), (b, pb))]
+        out[uf] = {"dados": {"pst": pst, "secoes": (0, 0), "atualizado": "", "top": top}, "erro": None}
+    return out
+
+
 def tela_diagnostico():
     """?debug=1 — mostra o que o TSE está devolvendo, para ajustar o leitor se preciso."""
     st.markdown("<style>.stApp *{color:#EEF2F6}</style>", unsafe_allow_html=True)
@@ -363,9 +430,16 @@ def carregar_demo() -> dict:
     for chave, *_ in CARGOS:
         pst = pst_br if chave == "pres" else pst_se
         base_votos = 120_000_000 if chave == "pres" else 1_100_000
+        lista = list(DEMO_BASE[chave])
+        ja = {n for _, n, _, _ in lista}
+        ultimo = lista[-1][3]
+        for n, (nome, p) in NOMES[chave].items():   # completa com os nomes conhecidos
+            if n not in ja and len(lista) < 20:
+                ultimo *= 0.82
+                lista.append((nome, n, p, ultimo))
         top = []
-        for nome, n, p, pct in DEMO_BASE[chave]:
-            pct_j = max(0.0, pct + random.uniform(-0.25, 0.25))
+        for nome, n, p, pct in lista:
+            pct_j = max(0.0, pct + random.uniform(-0.25, 0.25) * min(1.0, pct / 5))
             top.append({"nome": nome, "numero": n, "partido": p, "pct": pct_j,
                         "votos": int(base_votos * pst / 100 * pct_j / 100),
                         "situacao": "", "eleito": False, "foto": ""})
@@ -398,11 +472,15 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
 /* evita o "piscar" esmaecido durante o refresh */
 [data-stale="true"], .stale-element{opacity:1!important;filter:none!important;transition:none!important;}
 
-.painel{font-family:'Barlow',system-ui,sans-serif;color:var(--tecla);
-  height:calc(100vh - 3.2vh);display:flex;flex-direction:column;gap:1.4vh;}
+.stApp, .stApp p{font-family:'Barlow',system-ui,sans-serif;color:var(--tecla);}
+:root{
+  --topo:7.4vh;                                   /* altura do cabeçalho + respiro */
+  --area:calc(100vh - 3.2vh - var(--topo));       /* altura útil para os quadros */
+  --vgap:1.4vh;
+}
 
-.topo{display:flex;align-items:baseline;justify-content:space-between;
-  border-bottom:2px solid var(--linha);padding-bottom:.8vh;}
+.topo{display:flex;align-items:baseline;justify-content:space-between;height:6vh;box-sizing:border-box;
+  border-bottom:2px solid var(--linha);padding-bottom:.8vh;margin-bottom:calc(var(--topo) - 6vh);}
 .marca{font-family:'Barlow Condensed',sans-serif;font-weight:800;margin:0;padding:0;
   font-size:clamp(28px,4.6vh,64px);letter-spacing:.01em;color:var(--tecla);line-height:1;}
 .marca small{font-weight:500;color:var(--apagado);font-size:.55em;margin-left:.6em;}
@@ -413,14 +491,64 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
 .vivo.off{background:var(--corrige);animation:none;}
 @keyframes pulso{0%{box-shadow:0 0 0 0 rgba(43,182,115,.55)}70%{box-shadow:0 0 0 .7em rgba(43,182,115,0)}100%{box-shadow:0 0 0 0 rgba(43,182,115,0)}}
 
-.grade{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:1.4vh 1.4vw;min-height:0;}
-.cargo{background:var(--painel);border:1px solid var(--linha);border-radius:14px;
-  padding:1.6vh 1.4vw;display:flex;flex-direction:column;gap:1.2vh;min-height:0;}
+/* cabeçalho com abas */
+.st-key-topo{height:6vh;border-bottom:2px solid var(--linha);padding-bottom:.8vh!important;box-sizing:border-box;
+  align-items:center!important;flex-wrap:nowrap!important;gap:1.2vw!important;}
+.st-key-topo [data-testid="stElementContainer"]{width:auto!important;}
+.st-key-topo .st-key-relogio, .st-key-topo [data-testid="stLayoutWrapper"]:has(> .st-key-relogio){margin-left:auto!important;width:auto!important;flex:0 0 auto!important;}
+div[class*="st-key-aba-"] button{background:transparent!important;border:1px solid var(--linha)!important;
+  border-radius:99px!important;padding:.35vh 1.1vw!important;min-height:0!important;box-shadow:none!important;}
+div[class*="st-key-aba-"] button p{font-family:'Barlow',sans-serif!important;font-weight:600!important;
+  font-size:clamp(13px,1.9vh,26px)!important;color:var(--apagado)!important;line-height:1.2!important;}
+div[class*="st-key-aba-"] button:hover{border-color:var(--apagado)!important;}
+div[class*="st-key-aba-on-"] button{background:var(--tecla)!important;border-color:var(--tecla)!important;}
+div[class*="st-key-aba-on-"] button p{color:var(--tinta)!important;}
+div[class*="st-key-aba-"]{margin-bottom:.2vh;}
 
-.cab{display:flex;justify-content:space-between;align-items:flex-end;gap:1vw;}
-.titulo{font-family:'Barlow Condensed',sans-serif!important;font-weight:800!important;margin:0!important;padding:0!important;line-height:1!important;
-  font-size:clamp(26px,4.4vh,62px)!important;color:var(--tecla)!important;}
-.titulo span{font-weight:500;color:var(--apagado);font-size:.6em;margin-left:.35em;}
+/* colunas do Streamlit = metades da tela */
+[data-testid="stHorizontalBlock"]{gap:1.4vw!important;margin-top:1.2vh;}
+.st-key-topo + div, .st-key-quadros{margin-top:0;}
+.st-key-coluna-a, .st-key-coluna-b{gap:var(--vgap)!important;}
+
+/* o quadro de cada cargo é um container do Streamlit */
+div[class*="st-key-card-"]{background:var(--painel);border:1px solid var(--linha);border-radius:14px;
+  padding:1.6vh 1.4vw!important;position:relative;overflow:hidden;box-sizing:border-box;
+  gap:1.1vh!important;flex-wrap:nowrap!important;}
+div[class*="st-key-card-normal-"]{height:calc((var(--area) - var(--vgap)) / 2);}
+div[class*="st-key-card-foco-"]{height:var(--area);border-color:var(--apagado);}
+div[class*="st-key-card-mini-"]{height:calc((var(--area) - 2 * var(--vgap)) / 3);gap:.7vh!important;}
+div[class*="st-key-card-"] > div{width:100%;flex-shrink:0;}
+div[class*="st-key-card-"]{flex:0 0 auto!important;}
+[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-card-"]){flex:0 0 auto!important;}
+div[class*="st-key-card-"] [data-testid="stElementContainer"],
+div[class*="st-key-card-"] [data-testid="stMarkdown"],
+div[class*="st-key-card-"] [data-testid="stMarkdownContainer"]{position:static!important;}
+div[class*="st-key-btn-"]{display:flex!important;justify-content:flex-start!important;}
+div[class*="st-key-btn-"] .stButton, div[class*="st-key-btn-"] .stTooltipIcon{width:auto!important;}
+div[class*="st-key-btn-"] button > div{justify-content:flex-start!important;}
+div[class*="st-key-card-"] [data-testid="stMarkdownContainer"]{width:100%;}
+
+/* título do quadro = botão (clique abre/fecha) */
+div[class*="st-key-btn-"] button{background:none!important;border:none!important;box-shadow:none!important;
+  padding:0!important;min-height:0!important;margin:0!important;line-height:1!important;cursor:pointer;
+  justify-content:flex-start!important;}
+div[class*="st-key-btn-"] button p{font-family:'Barlow',sans-serif!important;color:var(--apagado)!important;
+  font-size:clamp(14px,2.6vh,38px)!important;line-height:1!important;margin:0!important;text-align:left;}
+div[class*="st-key-btn-"] button p strong{font-family:'Barlow Condensed',sans-serif!important;font-weight:800!important;
+  color:var(--tecla)!important;font-size:clamp(26px,4.4vh,62px)!important;margin-right:.15em;}
+div[class*="st-key-btn-"] button:hover p strong{text-decoration:underline;text-decoration-thickness:2px;
+  text-underline-offset:.15em;text-decoration-color:var(--apagado);}
+div[class*="st-key-btn-"] button:focus-visible{outline:2px solid var(--tecla)!important;outline-offset:4px;border-radius:6px;}
+div[class*="st-key-card-mini-"] div[class*="st-key-btn-"] button p{font-size:clamp(12px,2vh,28px)!important;}
+div[class*="st-key-card-mini-"] div[class*="st-key-btn-"] button p strong{font-size:clamp(20px,3.2vh,44px)!important;}
+
+/* % de urnas no canto superior direito do quadro */
+.urnas-abs{position:absolute;top:1.2vh;right:1.4vw;}
+div[class*="st-key-card-"] .trilho{margin-top:1vh;}
+div[class*="st-key-card-mini-"] .trilho{margin-top:.6vh;}
+div[class*="st-key-card-mini-"] .urnas small{display:none;}
+div[class*="st-key-card-mini-"] .urnas b{font-size:clamp(20px,3.2vh,44px);}
+div[class*="st-key-card-mini-"] .urnas small{font-size:clamp(11px,1.3vh,18px);}
 .urnas{text-align:right;line-height:1;}
 .urnas b{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(26px,4.4vh,62px);color:var(--tecla);}
 .urnas small{display:block;color:var(--apagado);font-size:clamp(12px,1.6vh,22px);margin-top:.3vh;}
@@ -449,7 +577,8 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
 .pct{font-family:'Barlow Condensed',sans-serif;font-weight:800;line-height:1;text-align:right;
   font-size:clamp(34px,7.4vh,110px);font-variant-numeric:tabular-nums;color:var(--c);}
 .cand{--c:var(--tecla);}
-.delta{grid-column:2/4;margin-top:.5vh;color:var(--apagado);font-size:clamp(13px,2vh,28px);line-height:1.15;
+.cand .delta{grid-column:2/4;margin-top:.5vh;}
+.delta{color:var(--apagado);font-size:clamp(13px,2vh,28px);line-height:1.15;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .delta b{font-family:'Barlow Condensed',sans-serif;font-weight:700;color:var(--tecla);font-size:1.3em;}
 .delta em{font-style:normal;color:var(--tecla);}
@@ -459,10 +588,81 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
   font-size:clamp(16px,2.4vh,32px);}
 .aviso{color:var(--corrige);font-size:clamp(12px,1.5vh,20px);}
 
+/* quadro aberto: lista dos 20 primeiros */
+.lista{overflow-y:auto;max-height:calc(var(--area) - 3.2vh - 4.4vh - 2.6vh - 1.5vh);padding-right:.4vw;margin-top:.6vh;}
+.lista::-webkit-scrollbar{width:8px}.lista::-webkit-scrollbar-thumb{background:var(--linha);border-radius:8px}
+.lin{--c:var(--tecla);display:grid;grid-template-columns:2em minmax(0,1fr) 5.2em 4.8em 4em;align-items:center;
+  column-gap:.8vw;padding:.35vh .6vw;border-left:5px solid var(--c);margin-bottom:.3vh;border-radius:4px;
+  font-size:clamp(14px,2.45vh,34px);line-height:1.1;
+  background:linear-gradient(90deg,color-mix(in srgb,var(--c) 20%,transparent) var(--w),transparent var(--w));}
+.lin.cabeca{border-left-color:transparent;background:none;color:var(--apagado);font-size:clamp(11px,1.5vh,20px);
+  padding-top:0;padding-bottom:.2vh;}
+.lin .pos{color:var(--apagado);font-variant-numeric:tabular-nums;}
+.lin .nm{font-family:'Barlow Condensed',sans-serif;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lin .nm small{font-family:'Barlow',sans-serif;font-weight:500;color:var(--apagado);font-size:.7em;margin-left:.6em;}
+.lin .vt{font-family:'Barlow Condensed',sans-serif;font-weight:700;text-align:right;font-variant-numeric:tabular-nums;}
+.lin .df{color:var(--apagado);text-align:right;font-variant-numeric:tabular-nums;font-size:.8em;}
+.lin.cabeca .df{white-space:nowrap;}
+.lin .pc{font-family:'Barlow Condensed',sans-serif;font-weight:800;text-align:right;color:var(--c);font-variant-numeric:tabular-nums;}
+.lin.cabeca span{font-family:'Barlow',sans-serif!important;font-weight:500!important;color:var(--apagado)!important;font-size:1em!important;}
+
+/* quadros reduzidos: sem foto, uma linha por candidato */
+.mini{display:flex;flex-direction:column;gap:.5vh;}
+.mlin{--c:var(--tecla);display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:baseline;column-gap:1vw;
+  border-left:4px solid var(--c);padding-left:.6vw;}
+.mlin .nm{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(16px,3.3vh,46px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;}
+.mlin .nm small{font-family:'Barlow',sans-serif;font-weight:500;color:var(--apagado);font-size:.55em;margin-left:.5em;}
+.mlin .vt{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(15px,3vh,42px);font-variant-numeric:tabular-nums;}
+.mlin .vt small{font-family:'Barlow',sans-serif;font-weight:500;font-size:.55em;opacity:.85;}
+.mlin .pc{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(18px,4vh,56px);
+  color:var(--c);text-align:right;font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;min-width:3.4em;}
+.mlin .vt{white-space:nowrap;}
+.mini{gap:.8vh;margin-top:.4vh;}
+.mini .delta{margin:0 0 .3vh calc(4px + .6vw);font-size:clamp(11px,1.9vh,26px);}
+
+/* eleito: tudo dourado */
+.eleito .votos, .eleito .votos small, .eleito .vt, .eleito .vt small, .eleito .nome, .eleito .nm, .eleito .ld{color:#F5C542!important;}
+.eleito .foto{box-shadow:0 0 1.2vh rgba(245,197,66,.55);}
+.meta .tag{background:#F5C542!important;color:var(--tinta)!important;}
+.meta .tag.alerta{background:var(--corrige)!important;}
+
+/* visão por estado */
+.st-key-filtro{gap:.6vw!important;margin:1.2vh 0 1vh!important;align-items:center!important;flex-wrap:nowrap!important;}
+.st-key-filtro [data-testid="stElementContainer"]{width:auto!important;}
+.st-key-filtro [data-testid="stElementContainer"]:last-child{min-width:0;flex:1 1 auto;}
+.resumo{display:flex;gap:1.6vw;flex-wrap:nowrap;overflow:hidden;max-width:100%;line-height:1.5;padding:.1em 0;align-items:baseline;font-size:clamp(13px,2vh,28px);color:var(--apagado);
+  margin-left:1.2vw;}
+.resumo span{white-space:nowrap;}
+.resumo b{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.3em;color:var(--c);}
+.ufs{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:1fr;gap:1vh .8vw;
+  height:calc(var(--area) - 6.4vh);}
+.uf{--c:var(--linha);background:var(--painel);border:1px solid var(--linha);border-top:6px solid var(--c);
+  border-radius:10px;padding:1vh .8vw;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
+.uf .cab{display:flex;justify-content:space-between;align-items:baseline;gap:.4vw;}
+.uf .sg{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(20px,3.6vh,50px);line-height:1;}
+.uf .ap{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:clamp(13px,2vh,28px);color:var(--tecla);
+  font-variant-numeric:tabular-nums;}
+.uf .ap small{color:var(--apagado);font-weight:500;font-size:.7em;margin-left:.2em;}
+.uf .es{color:var(--apagado);font-size:clamp(10px,1.4vh,19px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.uf .tr{height:.6vh;min-height:4px;background:var(--linha);border-radius:99px;overflow:hidden;margin:.6vh 0 .8vh;}
+.uf .tr i{display:block;height:100%;background:var(--tecla);}
+.uf .ld{margin-top:auto;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(13px,2.2vh,30px);
+  line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.uf .ld small{font-family:'Barlow',sans-serif;font-weight:500;color:var(--apagado);font-size:.7em;margin-left:.3em;}
+.uf .pc{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(24px,4.8vh,66px);line-height:1;
+  color:var(--c);font-variant-numeric:tabular-nums;}
+.uf .pc small{font-size:.45em;}
+.uf .mg{color:var(--apagado);font-size:clamp(10px,1.4vh,19px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.uf.sem{--c:var(--linha);}
+.uf.sem .ld{color:var(--apagado);font-weight:500;}
+
 @media (max-width:900px){
-  .painel{height:auto;}
-  .grade{grid-template-columns:1fr;grid-template-rows:none;}
-  .cargo{min-height:42vh;}
+  .ufs{grid-template-columns:repeat(3,minmax(0,1fr));height:auto;grid-auto-rows:auto;}
+  .st-key-topo{height:auto;flex-wrap:wrap!important;}
+  div[class*="st-key-card-"]{height:auto!important;min-height:30vh;}
+  .urnas-abs{position:static;text-align:left;}
+  .lista{max-height:70vh;}
 }
 @media (prefers-reduced-motion:reduce){.vivo{animation:none}.trilho i,.barra i{transition:none}}
 </style>
@@ -556,6 +756,18 @@ def opcoes_cor(sigla: str) -> list[str]:
     return list(dict.fromkeys(ordem))
 
 
+OURO = "#F5C542"
+
+
+def eleito(c: dict) -> bool:
+    """TSE marca o eleito com e='s' e/ou st='Eleito' ('Eleito por QP', 'Eleito por média'...)."""
+    return bool(c.get("eleito")) or str(c.get("situacao", "")).strip().lower().startswith("eleit")
+
+
+def cor_final(c: dict, cor: str | None = None) -> str:
+    return OURO if eleito(c) else (cor or opcoes_cor(c["partido"])[0])
+
+
 def _distancia(a: str, b: str) -> float:
     return sum((x - y) ** 2 for x, y in zip(_rgb(a), _rgb(b))) ** 0.5
 
@@ -569,7 +781,7 @@ def cores_do_quadro(cands: list[dict]) -> list[str]:
         if cores and _distancia(escolha, cores[0]) < 90:
             escolha = next((o for o in ops if _distancia(o, cores[0]) >= 90), escolha)
         cores.append(escolha)
-    return cores
+    return [cor_final(c, cor) for c, cor in zip(cands, cores)]
 
 
 def fmt_pct(p: float) -> str:
@@ -594,7 +806,7 @@ def html_cand(c: dict, cor: str, delta: str = "") -> str:
     largura = max(0.0, min(100.0, c["pct"]))
     partido_num = " – ".join(x for x in (escape(c["partido"]), escape(c["numero"])) if x)
     return f"""
-    <div class="cand" style="--c:{cor}">
+    <div class="cand{' eleito' if eleito(c) else ''}" style="--c:{cor}">
       <div class="foto" style="{foto_css}">{escape(iniciais(c['nome']))}</div>
       <div class="info">
         <div class="nome">{escape(c['nome'])}</div>
@@ -614,38 +826,152 @@ def html_delta(frente: dict, atras: dict) -> str:
     return f'<div class="delta"><b>{fmt_int(d)}</b> votos a mais que <em>{nome}</em></div>'
 
 
-def html_cargo(cargo, bloco) -> str:
-    chave, titulo, abrang, *_ = cargo
-    dados, erro = bloco["dados"], bloco["erro"]
-    if not dados:
-        corpo = f'<div class="vazio"><div>Aguardando dados do TSE…<br><span class="aviso">{escape(erro or "")}</span></div></div>'
-        return f'<div class="cargo"><div class="cab"><div class="titulo">{titulo}<span>{abrang}</span></div></div>{corpo}</div>'
-
+def html_urnas(dados, erro) -> str:
     pst = dados["pst"]
     tot, total = dados["secoes"]
     sub = f"{fmt_int(tot)} de {fmt_int(total)} seções" if total else "urnas apuradas"
     if erro:
-        sub = f'<span class="aviso">sem conexão — mostrando o último dado</span>'
-    top = dados["top"]
-    mostrados = top[:2]
-    cores = cores_do_quadro(mostrados)
+        sub = '<span class="aviso">sem conexão — último dado</span>'
+    return (f'<div class="urnas urnas-abs"><b>{fmt_pct(pst)}%</b><small>{sub}</small></div>'
+            f'<div class="trilho"><i style="width:{min(pst, 100):.2f}%"></i></div>')
+
+
+def deltas_do_quadro(chave: str, top: list) -> list[str]:
     deltas = ["", ""]
     if len(top) >= 2:
         deltas[0] = html_delta(top[0], top[1])
     if chave == "sen" and len(top) >= 3:
         # Senado 2026 tem 2 vagas: a disputa que importa é 2º × 3º
         deltas[1] = html_delta(top[1], top[2])
+    return deltas
+
+
+def corpo_normal(chave, dados, erro) -> str:
+    top = dados["top"]
+    mostrados = top[:2]
+    cores = cores_do_quadro(mostrados)
+    deltas = deltas_do_quadro(chave, top)
     cands = "".join(html_cand(c, cores[i], deltas[i]) for i, c in enumerate(mostrados)) or \
         '<div class="vazio">Ainda sem votos totalizados</div>'
-    return f"""
-    <div class="cargo">
-      <div class="cab">
-        <div class="titulo">{titulo}<span>{abrang}</span></div>
-        <div class="urnas"><b>{fmt_pct(pst)}%</b><small>{sub}</small></div>
-      </div>
-      <div class="trilho"><i style="width:{min(pst, 100):.2f}%"></i></div>
-      <div class="cands">{cands}</div>
-    </div>"""
+    return f'{html_urnas(dados, erro)}<div class="cands" style="height:calc((var(--area) - var(--vgap)) / 2 - 3.2vh - 7.6vh)">{cands}</div>'
+
+
+def corpo_mini(chave, dados, erro) -> str:
+    top = dados["top"]
+    mostrados = top[:2]
+    cores = cores_do_quadro(mostrados)
+    deltas = deltas_do_quadro(chave, top)
+    linhas = []
+    for i, c in enumerate(mostrados):
+        part = " – ".join(x for x in (escape(c["partido"]), escape(c["numero"])) if x)
+        linhas.append(
+            f'<div class="mlin{" eleito" if eleito(c) else ""}" style="--c:{cores[i]}"><span class="nm">{escape(c["nome"])}<small>{part}</small></span>'
+            f'<span class="vt">{fmt_int(c["votos"])}<small> votos</small></span>'
+            f'<span class="pc">{fmt_pct(c["pct"])}%</span></div>{deltas[i]}')
+    corpo = "".join(linhas) or '<div class="vazio">Ainda sem votos totalizados</div>'
+    return f'{html_urnas(dados, erro)}<div class="mini">{corpo}</div>'
+
+
+def corpo_foco(chave, dados, erro) -> str:
+    top = dados["top"]
+    if not top:
+        return f'{html_urnas(dados, erro)}<div class="vazio">Ainda sem votos totalizados</div>'
+    lider = max(top[0]["pct"], 0.01)
+    linhas = ['<div class="lin cabeca"><span>#</span><span>Candidato</span><span class="vt">Votos</span>'
+              '<span class="df">Vantagem</span><span class="pc">%</span></div>']
+    for i, c in enumerate(top):
+        cor = cor_final(c)
+        part = " – ".join(x for x in (escape(c["partido"]), escape(c["numero"])) if x)
+        dif = f'+{fmt_int(c["votos"] - top[i + 1]["votos"])}' if i + 1 < len(top) else ""
+        largura = 100 * c["pct"] / lider
+        linhas.append(
+            f'<div class="lin{" eleito" if eleito(c) else ""}" style="--c:{cor};--w:{largura:.1f}%"><span class="pos">{i + 1}º</span>'
+            f'<span class="nm">{escape(c["nome"])}<small>{part}</small></span>'
+            f'<span class="vt">{fmt_int(c["votos"])}</span><span class="df">{dif}</span>'
+            f'<span class="pc">{fmt_pct(c["pct"])}%</span></div>')
+    return f'{html_urnas(dados, erro)}<div class="lista">{"".join(linhas)}</div>'
+
+
+def compactar(html: str) -> str:
+    """Tira quebras de linha/indentação: no Markdown, linha indentada após linha em branco vira bloco de código."""
+    return re.sub(r"\n\s*", "", html)
+
+
+def nome_uf(uf: str) -> str:
+    return dict(UFS).get(uf, "Exterior" if uf == "zz" else uf.upper())
+
+
+def html_estados(cargo: str, blocos: dict) -> str:
+    tiles, lideres = [], {}
+    for uf, bloco in blocos.items():
+        d = bloco["dados"]
+        sg, nome = ("EXT" if uf == "zz" else uf.upper()), nome_uf(uf)
+        if not d or not d["top"]:
+            pst = d["pst"] if d else 0
+            msg = "Aguardando dados" if not d else "Sem votos ainda"
+            tiles.append(f'<div class="uf sem"><div class="cab"><span class="sg">{sg}</span>'
+                         f'<span class="ap">{fmt_pct(pst)}%</span></div><div class="es">{escape(nome)}</div>'
+                         f'<div class="tr"><i style="width:{min(pst, 100):.1f}%"></i></div>'
+                         f'<div class="ld">{msg}</div></div>')
+            continue
+        l1 = d["top"][0]
+        cor = cor_final(l1)
+        margem = ""
+        if len(d["top"]) > 1:
+            pp = l1["pct"] - d["top"][1]["pct"]
+            margem = f'+{fmt_pct(pp)} p.p. sobre {escape(d["top"][1]["nome"])}'
+        situ = l1["situacao"].lower()
+        if l1["eleito"] or situ.startswith("eleito"):
+            margem = "Eleito"
+        elif "2º turno" in situ:
+            margem = "Vai ao 2º turno"
+        # Presidente: conta por candidato; Governador/Senador: por partido (candidatos mudam de UF para UF)
+        chave_l = (l1["nome"], l1["partido"]) if cargo == "pres" else (l1["partido"] or "Sem partido", "")
+        lideres.setdefault(chave_l, [0, cor])[0] += 1
+        tiles.append(
+            f'<div class="uf{" eleito" if eleito(l1) else ""}" style="--c:{cor}"><div class="cab"><span class="sg">{sg}</span>'
+            f'<span class="ap">{fmt_pct(d["pst"])}%<small>urnas</small></span></div>'
+            f'<div class="es">{escape(nome)}</div>'
+            f'<div class="tr"><i style="width:{min(d["pst"], 100):.1f}%"></i></div>'
+            f'<div class="ld">{escape(l1["nome"])}<small>{escape(l1["partido"])}</small></div>'
+            f'<div class="pc">{fmt_pct(l1["pct"])}<small>%</small></div>'
+            f'<div class="mg">{margem}</div></div>')
+    ranking = sorted(lideres.items(), key=lambda kv: -kv[1][0])
+    resumo = "".join(
+        f'<span style="--c:{cor}"><b>{escape(nome)}</b> lidera em {n} {"UF" if n == 1 else "UFs"}</span>'
+        for (nome, _), (n, cor) in ranking)
+    return f'<div class="resumo">{resumo}</div>', f'<div class="ufs">{"".join(tiles)}</div>'
+
+
+def ir_para_aba(aba: str):
+    st.session_state.aba = aba
+
+
+def escolher_cargo_uf(cargo: str):
+    st.session_state.cargo_uf = cargo
+
+
+def alternar_foco(chave: str):
+    st.session_state.foco = None if st.session_state.get("foco") == chave else chave
+
+
+def quadro(cargo, bloco, modo: str):
+    """modo: 'normal' (2×2), 'foco' (aberto, lista de 20) ou 'mini' (reduzido, sem foto)."""
+    chave, titulo, abrang, *_ = cargo
+    dados, erro = bloco["dados"], bloco["erro"]
+    with st.container(key=f"card-{modo}-{chave}"):
+        rotulo = f"**{titulo}** {abrang}" + ("  ✕" if modo == "foco" else "")
+        st.button(rotulo, key=f"btn-{chave}", on_click=alternar_foco, args=(chave,))
+        if not dados:
+            html = (f'<div class="vazio" style="height:20vh"><div>Aguardando dados do TSE…<br>'
+                    f'<span class="aviso">{escape(erro or "")}</span></div></div>')
+        elif modo == "foco":
+            html = corpo_foco(chave, dados, erro)
+        elif modo == "mini":
+            html = corpo_mini(chave, dados, erro)
+        else:
+            html = corpo_normal(chave, dados, erro)
+        st.markdown(compactar(html), unsafe_allow_html=True)
 
 
 # ───────────────────────── PÁGINA ─────────────────────────
@@ -657,23 +983,67 @@ DEMO = st.query_params.get("demo") in ("1", "true", "sim")
 DEBUG = st.query_params.get("debug") in ("1", "true", "sim")
 
 
-@st.fragment(run_every=REFRESH_S)
-def painel():
-    blocos = carregar_demo() if DEMO else carregar_tudo()
-    algum_erro = any(b["erro"] for b in blocos.values())
-    agora = datetime.now(TZ).strftime("%H:%M:%S")
+def cabecalho(algum_erro: bool, rotulo: str):
+    aba = st.session_state.get("aba", "painel")
+    with st.container(key="topo", horizontal=True, vertical_alignment="bottom"):
+        st.markdown(f'<div class="marca">Apuração 2026<small>1º turno{" — demonstração" if DEMO else ""}</small></div>',
+                    unsafe_allow_html=True)
+        for chave, texto in (("painel", "Painel"), ("estados", "Por estado")):
+            estado = "on" if aba == chave else "off"
+            st.button(texto, key=f"aba-{estado}-{chave}", on_click=ir_para_aba, args=(chave,))
+        with st.container(key="relogio"):
+            st.markdown(f'<div class="relogio"><span class="vivo {"off" if algum_erro else ""}"></span>{rotulo}</div>',
+                        unsafe_allow_html=True)
+
+
+def rotulo_hora(blocos: dict) -> str:
     tse_hora = next((b["dados"]["atualizado"].split(" ")[-1] for b in blocos.values()
                      if b["dados"] and b["dados"]["atualizado"]), "")
-    rotulo = f"TSE {tse_hora}" if tse_hora else agora
-    cards = "".join(html_cargo(c, blocos[c[0]]) for c in CARGOS)
-    st.markdown(f"""
-    <div class="painel">
-      <div class="topo">
-        <div class="marca">Apuração 2026<small>1º turno{' — demonstração' if DEMO else ''}</small></div>
-        <div class="relogio"><span class="vivo {'off' if algum_erro else ''}"></span>{rotulo}</div>
-      </div>
-      <div class="grade">{cards}</div>
-    </div>""", unsafe_allow_html=True)
+    return f"TSE {tse_hora}" if tse_hora else datetime.now(TZ).strftime("%H:%M:%S")
+
+
+def visao_estados():
+    cargo = st.session_state.get("cargo_uf", "pres")
+    blocos = carregar_estados_demo(cargo) if DEMO else carregar_estados(cargo)
+    erros = sum(1 for b in blocos.values() if b["erro"])
+    cabecalho(erros > 0, rotulo_hora(blocos))
+    resumo, grade = html_estados(cargo, blocos)
+    with st.container(key="filtro", horizontal=True):
+        for chave, (texto, *_) in CARGOS_UF.items():
+            estado = "on" if cargo == chave else "off"
+            st.button(texto, key=f"aba-{estado}-uf-{chave}", on_click=escolher_cargo_uf, args=(chave,))
+        st.markdown(compactar(resumo), unsafe_allow_html=True)
+    st.markdown(compactar(grade), unsafe_allow_html=True)
+
+
+@st.fragment(run_every=REFRESH_S)
+def painel():
+    if st.session_state.get("aba", "painel") == "estados":
+        visao_estados()
+        return
+
+    blocos = carregar_demo() if DEMO else carregar_tudo()
+    algum_erro = any(b["erro"] for b in blocos.values())
+    cabecalho(algum_erro, rotulo_hora(blocos))
+
+    por_chave = {c[0]: c for c in CARGOS}
+    foco = st.session_state.get("foco")
+    esq, dir_ = st.columns(2)
+    if foco in por_chave:
+        with esq, st.container(key="coluna-a"):
+            quadro(por_chave[foco], blocos[foco], "foco")
+        with dir_, st.container(key="coluna-b"):
+            for c in CARGOS:
+                if c[0] != foco:
+                    quadro(c, blocos[c[0]], "mini")
+    else:
+        # mesma posição de antes: Presidente | Governador / Senador | Deputado federal
+        with esq, st.container(key="coluna-a"):
+            quadro(por_chave["pres"], blocos["pres"], "normal")
+            quadro(por_chave["sen"], blocos["sen"], "normal")
+        with dir_, st.container(key="coluna-b"):
+            quadro(por_chave["gov"], blocos["gov"], "normal")
+            quadro(por_chave["depf"], blocos["depf"], "normal")
 
 
 if DEBUG:
