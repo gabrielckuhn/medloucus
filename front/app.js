@@ -424,6 +424,7 @@ function desenharNoite(d) {
 }
 
 // ───────── GERAL ─────────
+const RECORTE = [15, 12, 3456, 3563];       // contorno do continente na geometria (sem Fernando de Noronha)
 let videosMontados = "", formas = null;
 
 function montarVideos(lista) {
@@ -455,8 +456,9 @@ function desenharMapaCanvas(cv, cor) {
   const dpr = window.devicePixelRatio || 1;
   cv.width = Math.round(box.width * dpr); cv.height = Math.round(box.height * dpr);
   const ctx = cv.getContext("2d");
-  const k = Math.min(cv.width / geo.w, cv.height / geo.h);
-  ctx.setTransform(k, 0, 0, k, (cv.width - geo.w * k) / 2, (cv.height - geo.h * k) / 2);
+  const [x0, y0, x1, y1] = RECORTE, bw = x1 - x0, bh = y1 - y0;
+  const k = Math.min(cv.width / bw, cv.height / bh);
+  ctx.setTransform(k, 0, 0, k, (cv.width - bw * k) / 2 - x0 * k, (cv.height - bh * k) / 2 - y0 * k);
   ctx.lineJoin = "round";
   ctx.strokeStyle = "#0E100F"; ctx.lineWidth = .35 * dpr / k;
   for (let i = 0; i < formas.m.length; i++) { ctx.fillStyle = cor(i); ctx.fill(formas.m[i]); ctx.stroke(formas.m[i]); }
@@ -499,7 +501,7 @@ function renderGeral(d, visivel) {
   const pf = p ? p.prob_f : null;
   const txt = v => v > .995 ? ">99%" : v < .005 ? "<1%" : fp(100 * v, 0) + "%";
   $("#g-ch-F").style.flexBasis = (pf == null ? 50 : 100 * pf) + "%"; $("#g-ch-L").style.flexBasis = (pf == null ? 50 : 100 * (1 - pf)) + "%";
-  $("#g-ch-F-txt").textContent = pf == null ? "Chance de vitória: aguardando" : "Chance de Flávio " + txt(pf);
+  $("#g-ch-F-txt").textContent = pf == null ? "Chance de vitória: aguardando" : "Flávio " + txt(pf);
   $("#g-ch-L-txt").textContent = pf == null ? "" : "Lula " + txt(1 - pf);
   // números
   const ap = n.te ? 100 * n.et / n.te : n.pst;

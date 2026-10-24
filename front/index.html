@@ -245,9 +245,13 @@ main { position: relative; min-height: 0; }
 .texto b { color: var(--papel); font-weight: 600; }
 
 /* ── GERAL ── */
-#geral { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr); gap: 2vw; }
+#geral { --vao: 1.2vw; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr); gap: var(--vao);
+  container-type: size; }
 .g-esq { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 2.2vh; min-height: 0; }
-.g-topo, .g-meio { display: grid; grid-template-columns: 1.22fr 1.22fr 1fr; gap: 1.6vw; min-height: 0; }
+.g-topo, .g-meio { display: grid; grid-template-columns: 1fr 1fr auto; min-height: 0; }
+.g-topo { column-gap: .5vw; }
+.g-topo .g-placar { margin-left: var(--vao); }
+.g-meio { column-gap: 1.12vw; }
 .g-mapa { margin: 0; min-height: 0; position: relative; }
 .g-mapa canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .g-placar { display: flex; flex-direction: column; justify-content: center; gap: 2.2vh; text-align: right; min-width: 0; }
@@ -259,7 +263,8 @@ main { position: relative; min-height: 0; }
 .g-lado.venceu .g-pct { color: var(--ouro); }
 .g-votos { color: var(--nevoa); font-size: var(--f-txt); margin-top: .6vh; }
 .g-votos b { color: var(--papel); font-weight: 600; }
-.g-manchete { margin: 0; font-size: var(--f-sub); font-weight: 700; font-stretch: 90%; line-height: 1.2; }
+.g-manchete { margin: 0; font-size: var(--f-sub); font-weight: 700; font-stretch: 90%; line-height: 1.2;
+  contain: inline-size; }     /* quebra na largura dos números, sem alargar a coluna */
 .g-manchete.eleito { color: var(--ouro); }
 .g-meio { border-top: 1px solid var(--linha); padding-top: 1.8vh; }
 .g-meio > div { min-width: 0; }
@@ -276,16 +281,20 @@ main { position: relative; min-height: 0; }
 .g-proj .F b { color: var(--flavio); }
 .g-proj .L { text-align: right; }
 .g-proj .L b { color: var(--lula); }
-#geral .chance-barra { margin-top: 1.4vh; }
+#geral .chance-barra { margin-top: .5vh; }
+.g-rot { margin: 1.3vh 0 0; color: var(--nevoa); font-size: var(--f-mini); }
 #geral .chance-txt { font-size: var(--f-mini); }
 .g-numeros b { font-size: clamp(15px, 2.9vh, 40px); }
-.g-numeros > div { padding: 0 max(10px, .9vw); }
-.g-numeros { margin-top: 0; border-top: 1px solid var(--linha); padding-top: 1.8vh; }
+.g-numeros > div { padding: 0 max(10px, .75vw); }
+.g-numeros > div:first-child { padding-left: 0; }
+.g-numeros { margin-top: 0; border-top: 1px solid var(--linha); padding-top: 1.8vh;
+  grid-template-columns: repeat(5, auto); justify-content: space-between; }
 /* dois vídeos 16:9: o de cima alinha com o topo dos mapas, o de baixo com a base da faixa de números */
-.g-videos { width: min(36vw, 69vh); display: grid; grid-template-rows: 1fr 1fr; gap: 2.4vh; min-height: 0; }
-.g-video:last-child { align-self: end; }
+.g-videos { --leg: calc(max(13px, 1.8vh) * 1.25 + .8vh);
+  width: min(46cqw, calc((100cqh - var(--vao) - 2 * var(--leg)) / 2 * 16 / 9));
+  display: flex; flex-direction: column; gap: var(--vao); min-height: 0; }
 .g-video { margin: 0; display: flex; flex-direction: column; gap: .8vh; min-height: 0; }
-.g-video figcaption { display: flex; align-items: center; gap: .6vw; font-size: var(--f-txt); font-weight: 650; }
+.g-video figcaption { display: flex; align-items: center; gap: .6vw; font-size: var(--f-txt); font-weight: 650; line-height: 1.25; }
 .g-video figcaption i { width: .55em; height: .55em; border-radius: 50%; background: var(--lula); }
 .g-video .quadro { position: relative; aspect-ratio: 16 / 9; width: 100%; background: var(--breu-2); border: 1px solid var(--linha); }
 .g-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
@@ -464,6 +473,7 @@ main { position: relative; min-height: 0; }
               <div class="F"><b id="g-proj-F">—</b><span>Flávio</span></div>
               <div class="L"><b id="g-proj-L">—</b><span>Lula</span></div>
             </div>
+            <p class="g-rot">Chance de vitória</p>
             <div class="chance-barra"><i id="g-ch-F" style="background:var(--flavio);flex:0 0 50%"></i><i id="g-ch-L" style="background:var(--lula);flex:0 0 50%"></i></div>
             <div class="chance-txt"><b id="g-ch-F-txt" style="color:var(--flavio-claro)">—</b><b id="g-ch-L-txt" style="color:var(--lula-claro)">—</b></div>
           </div>
