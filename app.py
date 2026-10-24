@@ -454,7 +454,7 @@ _componente_mapa = components.declare_component("mapa_br", path=str(PASTA_MAPA))
 LAGOAS = {4300001, 4300002}      # Lagoa dos Patos e Lagoa Mirim (água, não município)
 LIMITE_POR_CICLO = 1200          # municípios baixados por ciclo (o 1º carregamento leva ~1 min)
 # Escala por faixa: [≥70%, ≥58%, ≥53%, >51,3%]; de 50%+1 a 51,3% fica no cinza neutro
-ESCALAS = {"22": ["#00AEF3", "#4FA9D2", "#7795A3", "#919FA6"],    # Flávio Bolsonaro: azul
+ESCALAS = {"22": ["#187BD1", "#5C9BD3", "#6B91B3", "#84919C"],    # Flávio Bolsonaro: azul do painel, mesma perda de saturação do vermelho
            "13": ["#E91D24", "#D8585D", "#BC7B7E", "#A79294"]}    # Lula: vermelho
 NEUTRO = "#f0f0f0"
 SEM_DADO = "#1C3D66"
