@@ -12,6 +12,7 @@ O que ele faz:
 Rodar:       streamlit run app.py
 Demonstração: ?demo=1   (dados fictícios que vão até 100%)
 Diagnóstico:  ?debug=1  (mostra o que o TSE devolve)
+Mapa:         aba "Mapa" no topo — municípios coloridos pela margem do vencedor (pasta mapa_br/)
 O painel do 1º turno está em app_1turno.py.
 """
 from __future__ import annotations
@@ -21,16 +22,19 @@ import gzip
 import json
 import random
 import re
+import threading
 import time
 import unicodedata
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from html import escape
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ───────────────────────── CONFIGURAÇÃO ─────────────────────────
 REFRESH_S = 5
@@ -231,7 +235,8 @@ def ler(raw, uf: str) -> dict:
             "votos": int(num(c.get("vap"))),
             "pct": num(c.get("pvap")),
             "situacao": str(c.get("st") or ""),
-            "eleito": str(c.get("e") or "").lower() == "s",
+            # e="s" também marca quem foi ao 2º turno; eleito só quando a situação diz "Eleito"
+            "eleito": str(c.get("st") or "").strip().lower().startswith("eleit"),
             "foto": url_foto(uf, str(c.get("sqcand"))) if c.get("sqcand") else "",
         })
     cands.sort(key=lambda x: (x["votos"], x["pct"]), reverse=True)
@@ -430,7 +435,7 @@ def analisar(nac: dict, ufs: dict) -> dict | None:
     sj = d["sub_judice"]
     taxa_validos = d["validos"] / d["eleitorado_tot"] if d["eleitorado_tot"] else None
     R_est = R * taxa_validos if (R is not None and taxa_validos) else None
-    oficial = a["eleito"] or a["situacao"].lower().startswith("eleit")
+    oficial = a["eleito"]
     # Certeza matemática (CF art. 77 §3º: maioria absoluta dos válidos no 2º turno). Pior caso:
     # todo eleitor que falta comparece, vota válido no 2º colocado e todo voto anulado sub judice
     # é revalidado para ele. Se mesmo assim não empata, acabou.
@@ -441,6 +446,217 @@ def analisar(nac: dict, ufs: dict) -> dict | None:
         "virar_est": pct_para_virar(D, None if R_est is None else R_est + sj),
         "oficial": oficial, "certeza": certeza, "proj": projetar(ufs, d),
     }
+
+
+# ───────────────────────── MAPA MUNICIPAL ─────────────────────────
+PASTA_MAPA = Path(__file__).parent / "mapa_br"
+_componente_mapa = components.declare_component("mapa_br", path=str(PASTA_MAPA))
+LAGOAS = {4300001, 4300002}      # Lagoa dos Patos e Lagoa Mirim (água, não município)
+LIMITE_POR_CICLO = 1200          # municípios baixados por ciclo (o 1º carregamento leva ~1 min)
+# Escala por faixa: [≥70%, ≥58%, ≥53%, >51,3%]; de 50%+1 a 51,3% fica no cinza neutro
+ESCALAS = {"22": ["#00AEF3", "#4FA9D2", "#7795A3", "#919FA6"],    # Flávio Bolsonaro: azul
+           "13": ["#E91D24", "#D8585D", "#BC7B7E", "#A79294"]}    # Lula: vermelho
+NEUTRO = "#f0f0f0"
+SEM_DADO = "#1C3D66"
+FAIXAS = ["70% ou mais", "58% a 70%", "53% a 58%", "51,3% a 53%"]
+UF_IBGE = {"11": "ro", "12": "ac", "13": "am", "14": "rr", "15": "pa", "16": "ap", "17": "to", "21": "ma",
+           "22": "pi", "23": "ce", "24": "rn", "25": "pb", "26": "pe", "27": "al", "28": "se", "29": "ba",
+           "31": "mg", "32": "es", "33": "rj", "35": "sp", "41": "pr", "42": "sc", "43": "rs", "50": "ms",
+           "51": "mt", "52": "go", "53": "df"}
+
+
+@st.cache_resource
+def geo_ids() -> list[int]:
+    with open(PASTA_MAPA / "geo.json", encoding="utf-8") as f:
+        return json.load(f)["ids"]
+
+
+def faixa(pa: int) -> int | None:
+    """pa = % do 1º candidato da tela ×10 entre os válidos; -1 = sem votos. Igual ao JS do mapa."""
+    if pa < 0:
+        return None
+    lider = max(pa, 1000 - pa) / 10
+    return 0 if lider >= 70 else 1 if lider >= 58 else 2 if lider >= 53 else 3 if lider > 51.3 else 4
+
+
+class Coletor:
+    """Roda em segundo plano (uma vez por servidor). A cada ciclo lê o andamento de cada UF
+    ({uf}-e006258-ab.jws, com a hora da última totalização de cada município) e baixa só os
+    municípios que mudaram ({uf}{mun}-c0001-e006258-u.jws)."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.votos: dict[int, dict] = {}     # código IBGE → {"v": {número: votos}, "pst": %}
+        self.carimbo: dict = {}              # (uf, cód. TSE) → (data, hora, seções) da última leitura
+        self.cd_ibge: dict = {}              # (uf, cód. TSE) → código IBGE
+        self.erro: str | None = None
+        self.fila = 0
+        self.ultimo = 0.0
+        self.sessao = requests.Session()
+        self.sessao.headers.update(HEADERS)
+
+    def _get(self, url: str):
+        r = self.sessao.get(url, params={"nocache": int(time.time() * 1000)}, timeout=6)
+        r.raise_for_status()
+        return decodificar(r.text)
+
+    def _config(self):
+        cfg = self._get(f"{BASE}/{ELE}/config/mun-e{ELE:06d}-cm.jws")
+        m = {}
+        for a in cfg.get("abr", []):
+            uf = str(a.get("cd", "")).lower()
+            if uf == "zz":                               # municípios do exterior não entram no mapa
+                continue
+            for mu in a.get("mu", []):
+                try:
+                    m[(uf, str(mu["cd"]))] = int(mu["cdi"])
+                except (KeyError, ValueError, TypeError):
+                    pass
+        self.cd_ibge = m
+
+    def _andamento(self, uf: str) -> list:
+        try:
+            j = self._get(f"{BASE}/{ELE}/dados/{uf}/{uf}-e{ELE:06d}-ab.jws")
+        except Exception:  # noqa: BLE001
+            return []
+        out = []
+        for a in j.get("abr", []):
+            if str(a.get("tpabr", "")).lower() not in ("mun", "mu"):
+                continue
+            s_ = a.get("s") or {}
+            if num(s_.get("st")) <= 0:                   # nenhuma seção totalizada ainda
+                continue
+            out.append(((uf, str(a.get("cdabr"))), (a.get("dt"), a.get("ht"), s_.get("st"))))
+        return out
+
+    def _municipio(self, item):
+        (uf, cd), carimbo = item
+        d = ler(self._get(f"{BASE}/{ELE}/dados/{uf}/{uf}{cd}-c{CARGO:04d}-e{ELE:06d}-u.jws"), uf)
+        return (uf, cd), carimbo, {"v": {c["numero"]: c["votos"] for c in d["cands"] if not sub_judice(c)},
+                                   "pst": d["pst"]}
+
+    def ciclo(self):
+        if not self.cd_ibge:
+            self._config()
+        with ThreadPoolExecutor(max_workers=14) as ex:
+            listas = list(ex.map(self._andamento, [u for u, _ in UFS if u != "zz"]))
+        mudou = [it for lista in listas for it in lista if self.carimbo.get(it[0]) != it[1]]
+        lote = mudou[:LIMITE_POR_CICLO]
+        self.fila = len(mudou)
+        with ThreadPoolExecutor(max_workers=24) as ex:
+            for fut in [ex.submit(self._municipio, it) for it in lote]:
+                try:
+                    chave, carimbo, dados = fut.result()
+                except Exception:  # noqa: BLE001  (fica para o próximo ciclo)
+                    continue
+                cdi = self.cd_ibge.get(chave)
+                if cdi is not None:
+                    with self.lock:
+                        self.votos[cdi] = dados
+                self.carimbo[chave] = carimbo
+                self.fila -= 1
+        self.ultimo, self.erro = time.time(), None
+
+    def rodar(self):
+        while True:
+            t0 = time.time()
+            try:
+                self.ciclo()
+            except Exception as e:  # noqa: BLE001
+                self.erro = f"{type(e).__name__}: {e}"[:160]
+            time.sleep(max(1.0, REFRESH_S - (time.time() - t0)))
+
+    def copia(self) -> dict:
+        with self.lock:
+            return dict(self.votos)
+
+
+@st.cache_resource
+def coletor() -> Coletor:
+    c = Coletor()
+    threading.Thread(target=c.rodar, daemon=True, name="coletor-municipios").start()
+    return c
+
+
+def votos_demo(ufs: dict) -> dict:
+    """Municípios fictícios: % da UF ± ruído, apuração da UF ± defasagem."""
+    out = {}
+    for cdi in geo_ids():
+        uf = UF_IBGE.get(str(cdi)[:2])
+        d = (ufs.get(uf) or {}).get("dados") if uf else None
+        if cdi in LAGOAS or not d:
+            continue
+        rnd = random.Random(cdi)
+        p22 = next((c["pct"] for c in d["cands"] if c["numero"] == "22"), 50.0)
+        pa = max(4.0, min(96.0, p22 + rnd.gauss(0, 11)))
+        pst = max(0.0, min(100.0, d["pst"] + rnd.uniform(-60, 35)))
+        if pst > 0:
+            out[cdi] = {"v": {"22": int(pa * 100), "13": int((100 - pa) * 100)}, "pst": pst}
+    return out
+
+
+def dados_mapa(votos: dict, num_a: str, num_b: str) -> tuple[list[int], list[int]]:
+    pa, ap = [], []
+    for cdi in geo_ids():
+        m = votos.get(cdi)
+        va = m["v"].get(num_a, 0) if m else 0
+        vb = m["v"].get(num_b, 0) if m else 0
+        pa.append(round(1000 * va / (va + vb)) if va + vb > 0 else -1)
+        ap.append(round(10 * m["pst"]) if m else 0)
+    return pa, ap
+
+
+def escala(numero: str, partido_: str) -> list[str]:
+    if numero in ESCALAS:
+        return ESCALAS[numero]
+    c = cor_partido(partido_)
+    return [c, c + "CC", c + "99", c + "66"]
+
+
+def html_lateral_mapa(an: dict, esq: dict, dir_: dict, pa: list[int], ap: list[int], status: str) -> str:
+    ce, cd = escala(esq["numero"], esq["partido"]), escala(dir_["numero"], dir_["partido"])
+    cont = {"e": [0] * 4, "d": [0] * 4, "n": 0}
+    com_voto = completos = 0
+    for p, a in zip(pa, ap):
+        k = faixa(p)
+        if k is None:
+            continue
+        com_voto += 1
+        completos += a >= 1000
+        if k == 4:
+            cont["n"] += 1
+        else:
+            cont["e" if p > 500 else "d"][k] += 1
+    total = len(geo_ids()) - len(LAGOAS)
+    ve, vd = sum(cont["e"]), sum(cont["d"])
+
+    def bloco(c, cores, nome):
+        linhas = "".join(
+            f'<div class="fx"><i style="background:{cores[k]}"></i><span>{FAIXAS[k]}</span><b>{fi(c[k])}</b></div>'
+            for k in range(4))
+        return f'<div class="lado"><h4 style="color:{cores[0]}">{escape(nome)}</h4>{linhas}</div>'
+
+    d = an["d"]
+    barra = "".join(
+        f'<i style="flex:{n};background:{cor}"></i>'
+        for n, cor in [(cont["e"][k], ce[k]) for k in range(4)] + [(cont["n"], NEUTRO)]
+        + [(cont["d"][k], cd[k]) for k in reversed(range(4))] if n)
+    return (
+        f'<div class="lat">'
+        f'<div class="lat-res"><div><span style="color:{ce[0]}">{escape(esq["nome"])}</span><b style="color:{ce[0]}">{fp(esq["pct"])}%</b></div>'
+        f'<div><span style="color:{cd[0]}">{escape(dir_["nome"])}</span><b style="color:{cd[0]}">{fp(dir_["pct"])}%</b></div>'
+        f'<small>{fp(d["pst"])}% das seções · diferença de {fi(an["dif"])} votos</small></div>'
+        f'<div class="lat-num"><b>{fi(com_voto)}</b> de {fi(total)} municípios com votos'
+        f'<small>{fi(completos)} com 100% das seções totalizadas</small></div>'
+        f'<div class="lat-ven"><span style="color:{ce[0]}"><b>{fi(ve)}</b> {escape(esq["nome"].split()[0].title())}</span>'
+        f'<span style="color:{NEUTRO}"><b>{fi(cont["n"])}</b> no limite</span>'
+        f'<span style="color:{cd[0]}"><b>{fi(vd)}</b> {escape(dir_["nome"].split()[0].title())}</span></div>'
+        f'<div class="lat-barra">{barra}</div>'
+        f'<div class="lados">{bloco(cont["e"], ce, esq["nome"])}{bloco(cont["d"], cd, dir_["nome"])}</div>'
+        f'<div class="fx neutro"><i style="background:{NEUTRO}"></i><span>De 50% + 1 voto a 51,3% (qualquer lado)</span><b>{fi(cont["n"])}</b></div>'
+        f'<div class="fx"><i style="background:{SEM_DADO};outline:1px solid var(--linha)"></i><span>Sem votos totalizados</span><b>{fi(total - com_voto)}</b></div>'
+        f'<p class="lat-nota">Cor = % do vencedor no município entre os votos válidos. {status}</p>'
+        f'</div>')
 
 
 # ───────────────────────── CORES ─────────────────────────
@@ -496,9 +712,44 @@ html, body, .stApp, [data-testid="stAppViewContainer"]{background:var(--tinta)!i
 .block-container, [data-testid="stMainBlockContainer"]{padding:1.6vh 1.8vw!important;max-width:100%!important;}
 [data-stale="true"], .stale-element{opacity:1!important;filter:none!important;transition:none!important;}
 
-.tela{font-family:'Barlow',system-ui,sans-serif;color:var(--tecla);height:calc(100vh - 3.2vh);
+.tela{font-family:'Barlow',system-ui,sans-serif;color:var(--tecla);height:calc(100vh - 3.2vh - 7.6vh);
   display:flex;flex-direction:column;gap:1.4vh;}
 .topo{display:flex;align-items:baseline;justify-content:space-between;border-bottom:2px solid var(--linha);padding-bottom:.8vh;}
+.stApp{font-family:'Barlow',system-ui,sans-serif;color:var(--tecla);}
+.st-key-topo{height:6.2vh;border-bottom:2px solid var(--linha);padding-bottom:.8vh!important;margin-bottom:1.4vh;
+  box-sizing:border-box;align-items:center!important;flex-wrap:nowrap!important;gap:1.2vw!important;}
+.st-key-topo [data-testid="stElementContainer"]{width:auto!important;}
+.st-key-topo .st-key-relogio, .st-key-topo [data-testid="stLayoutWrapper"]:has(> .st-key-relogio){margin-left:auto!important;
+  width:auto!important;flex:0 0 auto!important;}
+div[class*="st-key-aba-"] button{background:transparent!important;border:1px solid var(--linha)!important;border-radius:99px!important;
+  padding:.35vh 1.1vw!important;min-height:0!important;box-shadow:none!important;}
+div[class*="st-key-aba-"] button p{font-family:'Barlow',sans-serif!important;font-weight:600!important;
+  font-size:clamp(13px,1.9vh,26px)!important;color:var(--apagado)!important;line-height:1.2!important;}
+div[class*="st-key-aba-"] button:hover{border-color:var(--apagado)!important;}
+div[class*="st-key-aba-on-"] button{background:var(--tecla)!important;border-color:var(--tecla)!important;}
+div[class*="st-key-aba-on-"] button p{color:var(--tinta)!important;}
+.st-key-mapa iframe{height:calc(100vh - 3.2vh - 7.8vh)!important;width:100%!important;border:0;}
+.lat{font-family:'Barlow',system-ui,sans-serif;color:var(--tecla);display:flex;flex-direction:column;gap:1.4vh;
+  height:calc(100vh - 3.2vh - 7.8vh);overflow:hidden;}
+.lat-res{background:var(--painel);border:1px solid var(--linha);border-radius:12px;padding:1.2vh 1vw;}
+.lat-res div{display:flex;justify-content:space-between;align-items:baseline;font-family:'Barlow Condensed',sans-serif;
+  font-weight:700;font-size:clamp(18px,3.4vh,48px);line-height:1.15;}
+.lat-res b{font-weight:800;font-size:1.2em;font-variant-numeric:tabular-nums;}
+.lat-res small, .lat-num small{display:block;color:var(--apagado);font-size:clamp(11px,1.6vh,22px);margin-top:.4vh;}
+.lat-num{font-size:clamp(13px,2.1vh,30px);color:var(--apagado);}
+.lat-num b{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.6em;color:var(--tecla);}
+.lat-ven{display:flex;justify-content:space-between;font-size:clamp(12px,1.9vh,26px);}
+.lat-ven b{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.5em;font-variant-numeric:tabular-nums;}
+.lat-barra{display:flex;height:2.2vh;min-height:10px;border-radius:99px;overflow:hidden;background:var(--linha);}
+.lados{display:grid;grid-template-columns:1fr 1fr;gap:1vw;}
+.lado h4{margin:0 0 .6vh;padding:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(14px,2.4vh,34px);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fx{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.6vw;font-size:clamp(11px,1.75vh,24px);
+  padding:.35vh 0;}
+.fx i{width:1.8vh;height:1.8vh;min-width:10px;min-height:10px;border-radius:4px;display:block;}
+.fx span{color:var(--apagado);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fx b{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-variant-numeric:tabular-nums;}
+.lat-nota{margin:auto 0 0;color:var(--apagado);font-size:clamp(10px,1.5vh,20px);line-height:1.35;}
 .marca{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:clamp(26px,4.4vh,62px);line-height:1;}
 .marca small{font-weight:500;color:var(--apagado);font-size:.55em;margin-left:.6em;}
 .relogio{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:clamp(18px,3.2vh,44px);color:var(--apagado);
@@ -752,23 +1003,64 @@ DEMO = st.query_params.get("demo") in ("1", "true", "sim")
 DEBUG = st.query_params.get("debug") in ("1", "true", "sim")
 
 
+def ir_para(aba: str):
+    st.session_state.aba = aba
+
+
+def cabecalho(erro: bool, rotulo: str):
+    aba = st.session_state.get("aba", "painel")
+    with st.container(key="topo", horizontal=True, vertical_alignment="center"):
+        st.markdown(f'<div class="marca">Apuração 2026<small>2º turno · Presidente'
+                    f'{" — demonstração" if DEMO else ""}</small></div>', unsafe_allow_html=True)
+        for chave, texto in (("painel", "Painel"), ("mapa", "Mapa")):
+            st.button(texto, key=f"aba-{'on' if aba == chave else 'off'}-{chave}", on_click=ir_para, args=(chave,))
+        with st.container(key="relogio"):
+            st.markdown(f'<div class="relogio"><span class="vivo {"off" if erro else ""}"></span>{rotulo}</div>',
+                        unsafe_allow_html=True)
+
+
+def visao_mapa(an: dict, ufs: dict):
+    esq, dir_ = sorted((an["a"], an["b"]), key=lambda c: int(c["numero"] or 0))
+    if DEMO:
+        votos, status = votos_demo(ufs), "Modo demonstração: municípios fictícios."
+    else:
+        col = coletor()
+        votos = col.copia()
+        if col.erro:
+            status = f'<span class="aviso">Falha na última leitura: {escape(col.erro)}</span>'
+        elif col.fila > 0:
+            status = f"Atualizando: {fi(col.fila)} municípios na fila."
+        else:
+            status = "Atualiza sozinho conforme o TSE totaliza cada município."
+    pa, ap = dados_mapa(votos, esq["numero"], dir_["numero"])
+    c1, c2 = st.columns([1.75, 1], gap="medium")
+    with c1, st.container(key="mapa"):
+        _componente_mapa(pa=pa, ap=ap, altura=900, key="mapa-br", default=None,
+                         a={"nome": esq["nome"], "cores": escala(esq["numero"], esq["partido"])},
+                         b={"nome": dir_["nome"], "cores": escala(dir_["numero"], dir_["partido"])})
+    with c2:
+        st.markdown(compactar(html_lateral_mapa(an, esq, dir_, pa, ap, status)), unsafe_allow_html=True)
+
+
 @st.fragment(run_every=REFRESH_S)
 def painel():
+    if not DEMO:
+        coletor()                     # deixa o mapa municipal carregando em segundo plano
     nac, ufs = carregar_demo() if DEMO else carregar()
     an = analisar(nac, ufs)
     erro = bool(nac["erro"]) or any(b["erro"] for b in ufs.values())
     hora = (nac["dados"] or {}).get("atualizado", "").split(" ")[-1]
     rotulo = f"TSE {hora}" if hora else datetime.now(TZ).strftime("%H:%M:%S")
-    corpo = html_painel(an, nac["erro"]) if an else (
-        f'<div class="vazio"><div>Aguardando dados do TSE…<br><span class="aviso">{escape(nac["erro"] or "")}</span></div></div>')
-    st.markdown(compactar(f"""
-    <div class="tela">
-      <div class="topo">
-        <div class="marca">Apuração 2026<small>2º turno · Presidente{' — demonstração' if DEMO else ''}</small></div>
-        <div class="relogio"><span class="vivo {'off' if erro else ''}"></span>{rotulo}</div>
-      </div>
-      <div class="corpo">{corpo}</div>
-    </div>"""), unsafe_allow_html=True)
+    cabecalho(erro, rotulo)
+    if not an:
+        st.markdown(f'<div class="tela"><div class="vazio"><div>Aguardando dados do TSE…<br>'
+                    f'<span class="aviso">{escape(nac["erro"] or "")}</span></div></div></div>', unsafe_allow_html=True)
+        return
+    if st.session_state.get("aba", "painel") == "mapa":
+        visao_mapa(an, ufs)
+    else:
+        st.markdown(compactar(f'<div class="tela"><div class="corpo">{html_painel(an, nac["erro"])}</div></div>'),
+                    unsafe_allow_html=True)
 
 
 if DEBUG:

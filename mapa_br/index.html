@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mapa municipal</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0C2340; overflow: hidden;
+    font-family: 'Barlow', system-ui, sans-serif; color: #EEF2F6; }
+  #mapa { width: 100%; height: 100%; display: block; }
+  #mun path { stroke: #0C2340; stroke-width: .35px; vector-effect: non-scaling-stroke; transition: fill .6s ease; }
+  #mun path:hover { stroke: #FFFFFF; stroke-width: 1.5px; }
+  #uf path { fill: none; stroke: #EEF2F6; stroke-opacity: .75; stroke-width: 1.1px;
+    vector-effect: non-scaling-stroke; pointer-events: none; }
+  #dica { position: fixed; pointer-events: none; background: #0C2340; border: 1px solid #24476F; border-radius: 8px;
+    padding: 6px 10px; font-size: 14px; line-height: 1.35; display: none; white-space: nowrap; z-index: 2;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  #dica b { font-size: 16px; }
+  #carregando { position: absolute; inset: 0; display: grid; place-items: center; color: #8FA6C1; font-size: 18px; }
+</style>
+</head>
+<body>
+<div id="carregando">Carregando mapa…</div>
+<svg id="mapa" preserveAspectRatio="xMidYMid meet"><g id="mun"></g><g id="uf"></g></svg>
+<div id="dica"></div>
+<script>
+// ── Protocolo mínimo de componente do Streamlit (sem build/npm) ──
+function enviar(type, data) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, data || {}), "*");
+}
+const NS = "http://www.w3.org/2000/svg";
+let geo = null, caminhos = [], args = null, ultimaAltura = 0;
+
+const SEM_DADO = "#1C3D66", NEUTRO = "#f0f0f0";
+
+function classe(pa) {           // pa = % do candidato A (×10) entre os válidos; -1 = sem votos
+  if (pa < 0) return null;
+  const lider = Math.max(pa, 1000 - pa) / 10;
+  if (lider >= 70) return 0;
+  if (lider >= 58) return 1;
+  if (lider >= 53) return 2;
+  if (lider > 51.3) return 3;
+  return 4;                     // de 50% + 1 voto até 51,3% (e empate): cinza
+}
+
+function cor(pa) {
+  const k = classe(pa);
+  if (k === null) return SEM_DADO;
+  if (k === 4) return NEUTRO;
+  const lado = pa > 500 ? args.a : args.b;
+  return lado.cores[k];
+}
+
+function pinta() {
+  if (!geo || !args) return;
+  const pa = args.pa || [], ap = args.ap || [];
+  for (let i = 0; i < caminhos.length; i++) caminhos[i].setAttribute("fill", cor(pa[i] ?? -1));
+}
+
+function fmt(n, c) { return (n).toFixed(c).replace(".", ","); }
+
+function montar() {
+  const svg = document.getElementById("mapa");
+  svg.setAttribute("viewBox", `0 0 ${geo.w} ${geo.h}`);
+  const gm = document.getElementById("mun"), gu = document.getElementById("uf");
+  const frag = document.createDocumentFragment();
+  geo.p.forEach((d, i) => {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", d); p.setAttribute("fill", SEM_DADO); p.dataset.i = i;
+    frag.appendChild(p); caminhos.push(p);
+  });
+  gm.appendChild(frag);
+  geo.uf.forEach(d => { const p = document.createElementNS(NS, "path"); p.setAttribute("d", d); gu.appendChild(p); });
+  document.getElementById("carregando").remove();
+
+  const dica = document.getElementById("dica");
+  gm.addEventListener("mousemove", ev => {
+    const i = ev.target.dataset && ev.target.dataset.i;
+    if (i === undefined || !args) { dica.style.display = "none"; return; }
+    const pa = (args.pa || [])[i] ?? -1, ap = (args.ap || [])[i] ?? 0;
+    let corpo;
+    if (pa < 0) corpo = "Sem votos totalizados ainda";
+    else corpo = `<span style="color:${args.a.cores[0]}">${args.a.nome}</span> ${fmt(pa / 10, 1)}% · ` +
+                 `<span style="color:${args.b.cores[0]}">${args.b.nome}</span> ${fmt(100 - pa / 10, 1)}%` +
+                 `<br>${fmt(ap / 10, 1)}% das seções apuradas`;
+    dica.innerHTML = `<b>${geo.nm[i] || "—"}</b><br>${corpo}`;
+    dica.style.display = "block";
+    const x = Math.min(ev.clientX + 14, window.innerWidth - dica.offsetWidth - 6);
+    const y = Math.min(ev.clientY + 14, window.innerHeight - dica.offsetHeight - 6);
+    dica.style.left = x + "px"; dica.style.top = y + "px";
+  });
+  gm.addEventListener("mouseleave", () => { dica.style.display = "none"; });
+  pinta();
+}
+
+window.addEventListener("message", ev => {
+  const m = ev.data;
+  if (!m || m.type !== "streamlit:render") return;
+  args = m.args || {};
+  const h = args.altura || 800;
+  if (h !== ultimaAltura) { ultimaAltura = h; enviar("streamlit:setFrameHeight", { height: h }); }
+  pinta();
+});
+
+fetch("geo.json").then(r => r.json()).then(g => { geo = g; montar(); });
+enviar("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>
