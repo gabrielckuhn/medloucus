@@ -24,7 +24,7 @@ INICIO = {"Sul": 0, "Sudeste": 6, "Centro-Oeste": 3, "Nordeste": 16, "Norte": 22
 def verdade():
     rnd = np.random.default_rng(2026)
     ids, x, te1, ufs = matriz_base()
-    efeito_uf = {u: rnd.normal(0, 0.012, 2) for u in set(ufs)}
+    efeito_uf = {u: rnd.normal(0, 0.012, 2) for u in sorted(set(ufs))}
     rates = x @ P_VERDADE
     rates[:, :2] += np.array([efeito_uf[u] for u in ufs]) + rnd.normal(0, 0.022, (len(ids), 2))
     rates = np.clip(rates, 0.002, 0.98)

@@ -30,6 +30,9 @@ GRUPOS = ["Flávio", "Lula", "Outros candidatos", "Branco ou nulo", "Não votou"
 DESTINOS = ["Flávio", "Lula", "Branco ou nulo", "Não votou"]
 PASTA = Path(__file__).parent
 LAGOAS = {4300001, 4300002}
+SIG_SECOES = 0.04      # diferença Flávio − Lula entre seções de um mesmo município (por apto)
+SIG_REGIAO = 0.005     # piso do erro comum a uma região
+SIG_NACIONAL = 0.012   # erro comum ao país inteiro sobre o eleitorado que falta (ordem de apuração etc.)
 
 UF_IBGE = {"11": "ro", "12": "ac", "13": "am", "14": "rr", "15": "pa", "16": "ap", "17": "to", "21": "ma",
            "22": "pi", "23": "ce", "24": "rn", "25": "pb", "26": "pe", "27": "al", "28": "se", "29": "ba",
@@ -120,7 +123,8 @@ def matriz_base():
 # ───────────────────────── CERTEZA MATEMÁTICA ─────────────────────────
 def restante_max(d: dict) -> int | None:
     """Máximo de votos que ainda podem entrar = eleitorado apto das seções não totalizadas."""
-    if d["pst"] >= 100:
+    tot, total = d.get("secoes") or (0, 0)
+    if total and tot >= total:                       # todas as seções totalizadas (o % pode vir arredondado)
         return 0
     if d["eleitorado"] and d["eleitorado_tot"] and d["eleitorado"] >= d["eleitorado_tot"]:
         return d["eleitorado"] - d["eleitorado_tot"]
@@ -140,6 +144,7 @@ def situacao_nacional(nac: dict, ufs: dict) -> dict | None:
     d = nac.get("dados")
     if not d or len(d["cands"]) < 2:
         return None
+    R_mesmo_arquivo = restante_max(d)                # D e R lidos do mesmo arquivo: única base para a certeza
     if not (d["eleitorado"] and d["eleitorado_tot"]):
         E = sum((b["dados"] or {}).get("eleitorado", 0) for b in ufs.values())
         Et = sum((b["dados"] or {}).get("eleitorado_tot", 0) for b in ufs.values())
@@ -153,7 +158,8 @@ def situacao_nacional(nac: dict, ufs: dict) -> dict | None:
     R_est = R * taxa if (R is not None and taxa) else None
     # CF art. 77 §3º: maioria absoluta dos válidos. Pior caso: todo eleitor que falta vota válido no
     # 2º colocado e todo voto anulado sub judice é revalidado para ele. Se ainda assim não empata, acabou.
-    certeza = R is not None and "sub judice" not in a["situacao"].lower() and D > R + sj
+    certeza = (R_mesmo_arquivo is not None and "sub judice" not in a["situacao"].lower()
+               and D > R_mesmo_arquivo + sj)
     return {"d": d, "a": a, "b": b, "dif": D, "dif_pp": a["pct"] - b["pct"], "R": R, "R_est": R_est, "sj": sj,
             "virar_max": pct_para_virar(D, None if R is None else R + sj),
             "virar_est": pct_para_virar(D, None if R_est is None else R_est + sj),
@@ -180,9 +186,11 @@ def projetar(votos: dict, andamento: dict, ufs: dict) -> dict:
     obs = np.zeros((n, 3))                 # Flávio, Lula, branco/nulo já apurados
     for k, i in enumerate(ids):
         m = votos.get(int(i))
-        if m and m.get("est"):
-            est[k] = min(m["est"], te2[k])
-            obs[k] = [_votos_cand(m, NUM_F), _votos_cand(m, NUM_L), m.get("bn", 0)]
+        if m and (_votos_cand(m, NUM_F) + _votos_cand(m, NUM_L)) > 0:
+            e_ = m.get("est") or (andamento.get(int(i)) or {}).get("est") or te2[k] * m.get("pst", 0) / 100
+            if e_ > 0:
+                est[k] = min(e_, te2[k])
+                obs[k] = [_votos_cand(m, NUM_F), _votos_cand(m, NUM_L), m.get("bn", 0)]
     cont = (est > 0) & (obs[:, 0] + obs[:, 1] > 0)
     frac = np.where(te2 > 0, est / np.maximum(te2, 1), 0)
     R = np.maximum(te2 - est, 0)
@@ -233,14 +241,14 @@ def projetar(votos: dict, andamento: dict, ufs: dict) -> dict:
 
     # ── previsão do que falta
     base_rate = np.clip(x @ P + np.array([delta[u] for u in ufs_arr]), 0, 1)
-    lam = np.where(cont, frac / (frac + 0.2), 0.0)
+    lam = np.where(cont, frac / (frac + 0.5), 0.0)
     obs_rate = np.where(cont[:, None], obs / np.maximum(est, 1)[:, None], 0)
     rate = lam[:, None] * obs_rate + (1 - lam[:, None]) * base_rate
     proj = obs + R[:, None] * rate
 
     if zz_est > 0 and zz_obs[:2].sum() > 0:
         zz_proj = zz_obs * (zz_te / zz_est)
-        zz_R_mod = 0.0
+        zz_R_mod = max(zz_te - zz_est, 0.0)
     else:
         xz = base_1turno()["zz"][:5] / max(base_1turno()["zz"][5], 1)
         zz_proj = zz_te * np.clip(xz @ P, 0, 1)
@@ -250,17 +258,28 @@ def projetar(votos: dict, andamento: dict, ufs: dict) -> dict:
     L = proj[:, 1].sum() + zz_proj[1]
     BN = proj[:, 2].sum() + zz_proj[2]
 
-    # ── incerteza da diferença Flávio − Lula
+    # ── incerteza da diferença Flávio − Lula, só sobre o eleitorado que falta
+    # municipal: erro do modelo na parte prevista + diferença entre seções na parte "puxada" para o observado
+    var_ind = float((R ** 2 * ((1 - lam) ** 2 * sig_m2 + lam ** 2 * SIG_SECOES ** 2)).sum())
     R_eff = R * (1 - lam)
-    var_ind = sig_m2 * float((R_eff ** 2).sum())
     var_uf = 0.0
     for u in uf_lista:
         mk = ufs_arr == u
         v_u = tau2 * kappa / (peso_uf[u] + kappa)
         var_uf += float(R_eff[mk].sum()) ** 2 * v_u
-    sig_nac = 0.012        # erro comum nacional (p.p. do eleitorado que falta): ordem de apuração, não linearidade
-    var_nac = (sig_nac * (float(R_eff.sum()) + zz_R_mod)) ** 2
-    sd = math.sqrt(var_ind + var_uf + var_nac)
+    # regional: desvio comum a toda uma região (ex.: o Nordeste inteiro diferente do esperado)
+    med_reg = {}
+    for u in uf_lista:
+        if peso_uf[u] > 0:
+            med_reg.setdefault(REGIAO_UF.get(u, "?"), []).append(delta[u][0] - delta[u][1])
+    medias = [float(np.mean(v)) for v in med_reg.values() if v]
+    tau_reg2 = max(float(np.var(medias)) if len(medias) > 2 else 0.0, SIG_REGIAO ** 2)
+    var_reg = 0.0
+    for r in set(REGIAO_UF.get(u, "?") for u in uf_lista):
+        mk = np.array([REGIAO_UF.get(u, "?") == r for u in ufs_arr])
+        var_reg += float(R[mk].sum()) ** 2 * tau_reg2
+    var_nac = (SIG_NACIONAL * (float(R.sum()) + zz_R_mod)) ** 2
+    sd = math.sqrt(var_ind + var_uf + var_reg + var_nac)
     D = F - L
     V = F + L
     prob_f = _phi(D / sd) if sd > 0 else (1.0 if D > 0 else 0.0)
@@ -405,7 +424,7 @@ def dados_mapa(ids_geo: list[int], votos: dict, andamento: dict) -> dict:
 def previsao_decisao(hist: list, sit: dict, proj: dict) -> dict | None:
     """Quando a vantagem deve passar o máximo que ainda pode entrar, supondo que a diferença
     caminha em linha reta até a projeção final e o ritmo de apuração (eleitores/min) se mantém."""
-    if not sit or sit["R"] is None or sit["certeza"] or sit["oficial"] or not proj.get("D"):
+    if not sit or sit["R"] is None or sit["certeza"] or sit["oficial"] or not proj.get("ok"):
         return None
     d = sit["d"]
     te, et = d["eleitorado"], d["eleitorado_tot"]
