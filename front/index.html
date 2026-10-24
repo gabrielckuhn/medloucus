@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apuração 2026</title>
+<link rel="preload" href="archivo.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+/* Archivo (SIL OFL 1.1, ver archivo-OFL.txt), variável em peso e largura, embutida para não depender da internet */
+@font-face { font-family: "Archivo"; src: url("archivo.woff2") format("woff2-variations"), url("archivo.woff2") format("woff2");
+  font-weight: 100 900; font-stretch: 62% 125%; font-display: swap; }
+:root {
+  --breu: #0E100F;            /* fundo */
+  --breu-2: #151816;          /* superfície levemente acima do fundo */
+  --linha: #2A2C28;           /* fios da grade */
+  --papel: #FFFCE1;           /* texto principal */
+  --nevoa: #A6A48F;           /* texto secundário */
+  --flavio: #187BD1;
+  --flavio-claro: #5697DC;
+  --lula: #E91D24;
+  --lula-claro: #F26359;
+  --ouro: #FACB0E;            /* só para "eleito" */
+  --roxo: #4A1D96;
+  --ease: cubic-bezier(.165, .84, .44, 1);
+  --gutter: 2.2vw;
+  --f-mini: clamp(11px, 1.45vh, 19px);
+  --f-txt: clamp(13px, 1.8vh, 24px);
+  --f-sub: clamp(15px, 2.3vh, 31px);
+  --f-tit: clamp(20px, 3.2vh, 44px);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--breu); color: var(--papel); overflow: hidden;
+  font-family: 'Archivo', system-ui, sans-serif; font-size: var(--f-txt); font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--papel); outline-offset: 4px; }
+
+/* ── moldura HUD ── */
+.hud { position: fixed; inset: 0; display: grid; grid-template-rows: auto 1fr; padding: 1.8vh var(--gutter) 2vh; }
+.mira { position: absolute; width: 14px; height: 14px; pointer-events: none; }
+.mira::before, .mira::after { content: ""; position: absolute; background: var(--nevoa); }
+.mira::before { left: 6px; top: 0; width: 2px; height: 14px; }
+.mira::after { top: 6px; left: 0; height: 2px; width: 14px; }
+.mira.a { left: calc(var(--gutter) - 7px); top: calc(1.8vh - 7px); }
+.mira.b { right: calc(var(--gutter) - 7px); top: calc(1.8vh - 7px); }
+.mira.c { left: calc(var(--gutter) - 7px); bottom: calc(2vh - 7px); }
+.mira.d { right: calc(var(--gutter) - 7px); bottom: calc(2vh - 7px); }
+
+.topo { display: grid; grid-template-columns: 1fr auto 1fr; align-items: end; padding-bottom: 1.3vh;
+  border-bottom: 1px solid var(--linha); }
+.marca { display: flex; align-items: baseline; gap: .9vw; white-space: nowrap; }
+.marca b { font-weight: 800; font-stretch: 112%; font-size: var(--f-tit); letter-spacing: -.01em; line-height: 1; }
+.marca span { color: var(--nevoa); font-size: var(--f-sub); font-stretch: 88%; }
+nav { display: flex; gap: 2.4vw; }
+nav button { position: relative; font-size: var(--f-sub); font-weight: 500; color: var(--nevoa); padding: .4vh 0;
+  transition: color .3s var(--ease); }
+nav button::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1.3vh; height: 3px; background: var(--papel);
+  transform: scaleX(0); transform-origin: left; transition: transform .5s var(--ease); }
+nav button:hover { color: var(--papel); }
+nav button[aria-current="page"] { color: var(--papel); }
+nav button[aria-current="page"]::after { transform: scaleX(1); }
+.relogio { justify-self: end; display: flex; align-items: center; gap: .7vw; font-size: var(--f-sub); color: var(--nevoa); }
+.relogio b { color: var(--papel); font-weight: 600; font-stretch: 110%; }
+.pulso { width: .7em; height: .7em; border-radius: 50%; background: var(--papel); animation: pulso 2.4s var(--ease) infinite; }
+.pulso.falha { background: var(--lula); animation: none; }
+@keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(255,252,225,.45); } 80%, 100% { box-shadow: 0 0 0 .8em rgba(255,252,225,0); } }
+
+/* ── telas ── */
+main { position: relative; min-height: 0; }
+.tela { position: absolute; inset: 0; display: none; padding-top: 2vh; }
+.tela.ativa { display: grid; }
+.tela.entrando { animation: cortina .7s var(--ease) both; }
+@keyframes cortina { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
+
+.rotulo { color: var(--nevoa); font-size: var(--f-mini); margin: 0 0 .9vh; font-weight: 500; }
+.bloco { min-width: 0; min-height: 0; }
+.fio-v { border-left: 1px solid var(--linha); padding-left: 1.6vw; }
+.fio-t { border-top: 1px solid var(--linha); padding-top: 1.8vh; }
+
+/* ── AGORA ── */
+#agora { grid-template-rows: auto auto 1fr; gap: 2vh; }
+.manchete { display: flex; align-items: baseline; justify-content: space-between; gap: 2vw; min-height: 4.4vh; }
+.manchete h1 { margin: 0; font-size: var(--f-tit); font-weight: 700; font-stretch: 90%; line-height: 1.1; }
+.manchete h1.eleito { color: var(--ouro); }
+.manchete p { margin: 0; color: var(--nevoa); font-size: var(--f-txt); max-width: 62ch; text-align: right; }
+
+.placar { display: grid; grid-template-columns: 1fr 1fr; align-items: end; }
+.lado { min-width: 0; }
+.lado.dir { text-align: right; }
+.nome { font-size: clamp(22px, 4.6vh, 64px); font-weight: 750; font-stretch: 72%; line-height: .95; letter-spacing: .005em; }
+.pct { font-size: clamp(56px, 15.5vh, 220px); font-weight: 850; font-stretch: 125%; line-height: .86;
+  letter-spacing: -.035em; margin-top: .6vh; }
+.pct small { font-size: .32em; font-weight: 600; letter-spacing: 0; margin-left: .08em; }
+.votos { font-size: var(--f-sub); color: var(--papel); margin-top: 1vh; }
+.votos span { color: var(--nevoa); }
+.lado.F .pct { color: var(--flavio); }
+.lado.L .pct { color: var(--lula); }
+.lado.venceu .pct { color: var(--ouro); }
+.selo { display: inline-block; margin-top: .8vh; font-weight: 700; color: var(--breu); background: var(--ouro);
+  padding: .15em .6em; font-size: var(--f-txt); visibility: hidden; }
+.lado.venceu .selo { visibility: visible; }
+
+.cabo { position: relative; height: 3.4vh; min-height: 18px; display: flex; margin-top: 1.4vh; background: var(--breu-2); }
+.cabo i { display: block; height: 100%; transition: flex-basis 1.1s var(--ease); flex: 0 0 50%; }
+.cabo i.L { background: var(--lula); }
+.cabo i.F { background: var(--flavio); }
+.cabo .meio { position: absolute; left: 50%; top: -1.1vh; bottom: -1.1vh; width: 2px; background: var(--papel); transform: translateX(-50%); }
+.cabo .meio::after { content: "50%"; position: absolute; top: -2.2vh; left: 50%; transform: translateX(-50%);
+  font-size: var(--f-mini); color: var(--nevoa); }
+.apuracao { height: 6px; background: var(--breu-2); margin-top: 1.2vh; position: relative; }
+.apuracao i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #C9C5E2, #8475BE 55%, #4A1D96);
+  transition: width 1.1s var(--ease); }
+
+.numeros { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 1.6vh; }
+.numeros > div { padding: 0 1.2vw; border-left: 1px solid var(--linha); min-width: 0; }
+.numeros > div:first-child { border-left: 0; padding-left: 0; }
+.numeros b { display: block; font-size: clamp(18px, 3.4vh, 48px); font-weight: 800; font-stretch: 115%; line-height: 1.05; white-space: nowrap; }
+.numeros small { display: block; color: var(--nevoa); font-size: var(--f-mini); margin-top: .3vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.painel3 { display: grid; grid-template-columns: 1.05fr 1.25fr 1fr; gap: 1.6vw; min-height: 0; }
+.painel3 > section { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+
+/* projeção */
+.proj-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 1vw; }
+.proj-nums div { min-width: 0; }
+.proj-nums b { display: block; font-size: clamp(26px, 5.4vh, 76px); font-weight: 850; font-stretch: 118%; line-height: .95; letter-spacing: -.02em; }
+.proj-nums span { display: block; font-size: var(--f-txt); font-stretch: 80%; font-weight: 650; margin-top: .4vh; }
+.proj-nums .F b { color: var(--flavio); }
+.proj-nums .L b { color: var(--lula); }
+.intervalo { position: relative; height: 2.2vh; margin: 1.6vh 0 .6vh; background: var(--breu-2); }
+.intervalo .faixa { position: absolute; top: 0; bottom: 0; background: rgba(255,252,225,.16); transition: left 1s var(--ease), width 1s var(--ease); }
+.intervalo .ponto { position: absolute; top: -.6vh; bottom: -.6vh; width: 3px; background: var(--papel); transition: left 1s var(--ease); }
+.intervalo .meio { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--nevoa); }
+.intervalo-legenda { display: flex; justify-content: space-between; color: var(--nevoa); font-size: var(--f-mini); }
+.chance { margin-top: 1.8vh; }
+.chance-barra { display: flex; height: 1.2vh; min-height: 8px; margin: .7vh 0; }
+.chance-barra i { transition: flex-basis 1s var(--ease); }
+.chance-txt { display: flex; justify-content: space-between; font-size: var(--f-txt); }
+.chance-txt b { font-weight: 800; font-stretch: 115%; }
+.nota { color: var(--nevoa); font-size: var(--f-mini); line-height: 1.4; margin: 1.2vh 0 0; max-width: 60ch; }
+.nota b { color: var(--papel); font-weight: 600; }
+
+/* curva */
+.curva { flex: 1; min-height: 0; position: relative; }
+.curva svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.curva text { fill: var(--nevoa); font-size: 12px; font-family: 'Archivo', sans-serif; }
+.legenda-linhas { display: flex; gap: 1.6vw; color: var(--nevoa); font-size: var(--f-mini); margin-top: .6vh; }
+.legenda-linhas i { display: inline-block; width: 1.6em; height: 0; border-top: 2px solid var(--papel); vertical-align: middle; margin-right: .4em; }
+.legenda-linhas i.tr { border-top-style: dashed; }
+
+/* regiões */
+.regioes { display: flex; flex-direction: column; justify-content: space-between; flex: 1; gap: .5vh; }
+.reg { display: grid; grid-template-columns: 6.6em 1fr 4.6em 2.6em; align-items: center; gap: .8vw; }
+.reg .vl { text-align: right; font-weight: 700; font-stretch: 110%; white-space: nowrap; }
+.reg .nm { font-weight: 650; font-stretch: 85%; white-space: nowrap; }
+.reg .ap { color: var(--nevoa); text-align: right; font-size: var(--f-mini); }
+.divergente { position: relative; height: 1.9vh; min-height: 10px; }
+.divergente::before { content: ""; position: absolute; left: 50%; top: -.4vh; bottom: -.4vh; width: 1px; background: var(--nevoa); }
+.divergente i { position: absolute; top: 0; bottom: 0; transition: all 1s var(--ease); }
+.divergente u { position: absolute; top: -.5vh; bottom: -.5vh; width: 2px; background: var(--papel); transition: left 1s var(--ease); }
+.divergente span { position: absolute; top: 50%; transform: translateY(-50%); font-size: var(--f-mini); white-space: nowrap; }
+.escala-reg { display: flex; justify-content: space-between; color: var(--nevoa); font-size: var(--f-mini); margin-top: .4vh;
+  padding: 0 calc(7.2em + 1.6vw) 0 calc(6.6em + .8vw); }
+
+/* ── MAPA ── */
+#mapa { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 2vw; }
+.mapa-box { position: relative; min-height: 0; }
+#svgmapa { width: 100%; height: 100%; display: block; }
+#mun path { stroke: var(--breu); stroke-width: .35px; vector-effect: non-scaling-stroke; transition: fill .8s var(--ease); }
+#mun path:hover { stroke: var(--papel); stroke-width: 1.6px; }
+#uf path { fill: none; stroke: var(--papel); stroke-opacity: .55; stroke-width: 1px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.carregando { position: absolute; inset: 0; display: grid; place-items: center; color: var(--nevoa); }
+#dica { position: fixed; z-index: 9; pointer-events: none; background: var(--breu); border: 1px solid var(--linha);
+  padding: .9vh .8vw; font-size: var(--f-mini); line-height: 1.45; display: none; white-space: nowrap; }
+#dica b { font-size: var(--f-txt); font-weight: 700; display: block; }
+.mapa-lado { display: flex; flex-direction: column; gap: 2.2vh; min-height: 0; overflow: hidden; }
+.modos { display: flex; gap: 0; border: 1px solid var(--linha); align-self: flex-start; }
+.modos button { padding: .9vh 1.1vw; color: var(--nevoa); font-weight: 600; font-size: var(--f-txt); transition: background .4s var(--ease), color .4s var(--ease); }
+.modos button[aria-pressed="true"] { background: var(--papel); color: var(--breu); }
+.modo-tit { font-size: var(--f-tit); font-weight: 750; font-stretch: 88%; margin: 0; line-height: 1.1; }
+.modo-desc { color: var(--nevoa); margin: .6vh 0 0; max-width: 46ch; }
+.legenda { display: grid; gap: .7vh; }
+.leg-lin { display: grid; grid-template-columns: 1.4em 1fr auto; gap: .8vw; align-items: center; }
+.leg-lin i { width: 1.4em; height: 1.4em; display: block; }
+.leg-lin span { color: var(--nevoa); }
+.leg-lin b { font-weight: 700; font-stretch: 110%; }
+.leg-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4vw; }
+.leg-cols h4 { margin: 0 0 .8vh; font-size: var(--f-sub); font-stretch: 80%; font-weight: 750; }
+.gradiente { height: 1.8vh; min-height: 10px; }
+.grad-txt { display: flex; justify-content: space-between; color: var(--nevoa); font-size: var(--f-mini); margin-top: .5vh; }
+.contagem { display: flex; gap: 2vw; }
+.contagem div b { display: block; font-size: clamp(22px, 4.2vh, 58px); font-weight: 850; font-stretch: 118%; line-height: 1; }
+.contagem div span { color: var(--nevoa); font-size: var(--f-mini); }
+.listas { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4vw; }
+.lista h4 { margin: 0 0 .7vh; font-size: var(--f-txt); font-weight: 650; }
+.lista ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .45vh; }
+.lista li { display: flex; justify-content: space-between; gap: .6vw; font-size: var(--f-mini); }
+.lista li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lista li b { font-weight: 700; white-space: nowrap; }
+
+/* ── ESTADOS ── */
+#estados { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 2vw; }
+.tabela { display: grid; grid-template-columns: 2.8em minmax(0, 1.25fr) minmax(0, 1fr) 4.2em 4.2em 6.4em minmax(0, 1.7fr);
+  column-gap: 1vw; align-items: center; font-size: var(--f-mini); }
+.tabela > div { height: calc((100vh - 17vh) / 29); display: flex; align-items: center; border-bottom: 1px solid var(--linha);
+  white-space: nowrap; overflow: hidden; min-width: 0; }
+.tabela > div.r { justify-content: flex-end; }
+.tabela .apc { gap: .6vw; }
+.tabela .apc .ap-bar { flex: 1; }
+.tabela .apc span { color: var(--nevoa); width: 2.6em; text-align: right; }
+.tabela .dv { position: relative; }
+.tabela .dv::before { content: ""; position: absolute; left: 50%; top: 18%; bottom: 18%; width: 1px; background: var(--nevoa); }
+.tabela .dv i { position: absolute; top: 30%; bottom: 30%; }
+.tabela .dv span { position: absolute; top: 50%; transform: translateY(-50%); font-weight: 600; }
+.tabela .cab { color: var(--nevoa); border-bottom-color: var(--nevoa); padding-bottom: .6vh; }
+.tabela .sg { font-weight: 800; font-stretch: 110%; }
+.tabela .r { text-align: right; }
+.tabela .ap-bar { height: .7vh; min-height: 5px; background: #1E211F; position: relative; }
+.tabela .ap-bar i { position: absolute; inset: 0 auto 0 0; background: #8475BE; }
+.coluna { display: flex; flex-direction: column; gap: 2.4vh; min-height: 0; overflow: hidden; }
+.capitais { display: grid; grid-template-columns: minmax(0, 1fr) 4.4em 4.4em 3.6em; column-gap: .9vw; font-size: var(--f-mini); }
+.capitais > div { padding: .3vh 0; border-bottom: 1px solid var(--linha); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.capitais .cab { color: var(--nevoa); border-bottom-color: var(--nevoa); }
+.capitais .r { text-align: right; }
+
+/* ── MODELO ── */
+#modelo { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.4vw; }
+#modelo > .bloco { display: flex; flex-direction: column; }
+.noite { flex: 1; display: flex; flex-direction: column; margin-top: 2.4vh; min-height: 0; }
+.fluxos { display: grid; gap: 1.6vh; }
+.fluxo { display: grid; grid-template-columns: 9.5em 1fr; gap: 1vw; align-items: center; }
+.fluxo .nm { font-weight: 650; font-stretch: 85%; }
+.fluxo .nm small { display: block; color: var(--nevoa); font-weight: 400; font-stretch: 100%; font-size: var(--f-mini); }
+.pilha { display: flex; height: 3.4vh; min-height: 16px; }
+.pilha i { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: var(--f-mini);
+  font-weight: 700; overflow: hidden; transition: flex-basis 1s var(--ease); white-space: nowrap; }
+.dest { display: flex; gap: 1.6vw; margin-top: .6vh; color: var(--nevoa); font-size: var(--f-mini); }
+.dest i { display: inline-block; width: .9em; height: .9em; margin-right: .4em; vertical-align: -.05em; }
+.fatos { display: grid; grid-template-columns: 1fr 1fr; gap: 2.4vh 1.6vw; }
+.fatos b { display: block; font-size: clamp(22px, 4.4vh, 60px); font-weight: 850; font-stretch: 118%; line-height: 1; }
+.fatos span { color: var(--nevoa); font-size: var(--f-mini); }
+.texto { color: var(--nevoa); line-height: 1.5; max-width: 64ch; }
+.texto p { margin: 0 0 1.2vh; }
+.texto b { color: var(--papel); font-weight: 600; }
+
+.oculto { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+@media (max-width: 900px) {
+  html, body { overflow: auto; }
+  .hud { position: static; display: block; }
+  .tela, .tela.ativa { position: static; }
+  .topo { grid-template-columns: 1fr; gap: 1.2vh; }
+  .relogio { justify-self: start; }
+  .painel3, #mapa, #estados, #modelo, .numeros { grid-template-columns: 1fr; }
+  .numeros > div { border-left: 0; padding: .8vh 0; }
+  .mapa-box { height: 70vh; }
+  .pct { font-size: 12.5vw; }
+  .nome { font-size: 6.4vw; }
+  .manchete { flex-direction: column; align-items: flex-start; }
+  .manchete p { text-align: left; }
+  nav { gap: 5vw; }
+  .curva { height: 32vh; }
+}
+</style>
+</head>
+<body>
+<div class="hud">
+  <i class="mira a"></i><i class="mira b"></i><i class="mira c"></i><i class="mira d"></i>
+  <header class="topo">
+    <div class="marca"><b>Apuração 2026</b><span id="subtitulo">Presidente, 2º turno</span></div>
+    <nav aria-label="Telas">
+      <button data-tela="agora" aria-current="page">Agora</button>
+      <button data-tela="mapa">Mapa</button>
+      <button data-tela="estados">Estados</button>
+      <button data-tela="modelo">Modelo</button>
+    </nav>
+    <div class="relogio"><i class="pulso" id="pulso"></i><span id="hora">Conectando ao TSE</span></div>
+  </header>
+
+  <main>
+    <!-- AGORA -->
+    <section class="tela ativa" id="agora">
+      <div class="manchete"><h1 id="manchete">Aguardando os primeiros votos</h1><p id="manchete-sub"></p></div>
+      <div>
+        <div class="placar">
+          <div class="lado L" id="lado-L"><div class="nome" data-nome="L">Lula</div><div class="pct"><span data-pct="L">0,00</span><small>%</small></div>
+            <div class="votos"><b data-votos="L">0</b> <span>votos</span></div><span class="selo" data-selo="L">Eleito</span></div>
+          <div class="lado F dir" id="lado-F"><div class="nome" data-nome="F">Flávio Bolsonaro</div><div class="pct"><span data-pct="F">0,00</span><small>%</small></div>
+            <div class="votos"><b data-votos="F">0</b> <span>votos</span></div><span class="selo" data-selo="F">Eleito</span></div>
+        </div>
+        <div class="cabo"><i class="L" id="cabo-L"></i><i class="F" id="cabo-F"></i><span class="meio"></span></div>
+        <div class="apuracao" title="Eleitorado apurado"><i id="barra-apuracao" style="width:0"></i></div>
+        <div class="numeros">
+          <div><b id="n-secoes">0%</b><small id="n-secoes-sub">das seções totalizadas</small></div>
+          <div><b id="n-eleitorado">0%</b><small id="n-eleitorado-sub">do eleitorado apurado</small></div>
+          <div><b id="n-dif">0</b><small id="n-dif-sub">votos de diferença</small></div>
+          <div><b id="n-resta">—</b><small>votos que ainda podem entrar</small></div>
+          <div><b id="n-virar">—</b><small id="n-virar-sub">para virar</small></div>
+        </div>
+      </div>
+      <div class="painel3 fio-t">
+        <section>
+          <p class="rotulo" id="proj-rotulo">Projeção para 100% das urnas</p>
+          <div class="proj-nums">
+            <div class="L"><b data-proj="L">—</b><span>Lula</span></div>
+            <div class="F" style="text-align:right"><b data-proj="F">—</b><span>Flávio Bolsonaro</span></div>
+          </div>
+          <div class="intervalo" id="intervalo"><span class="meio"></span><span class="faixa" id="ic-faixa"></span><span class="ponto" id="ic-ponto"></span></div>
+          <div class="intervalo-legenda"><span>Lula 54%</span><span id="ic-txt">intervalo de 95%</span><span>Flávio 54%</span></div>
+          <div class="chance">
+            <p class="rotulo" style="margin:0">Chance de vitória</p>
+            <div class="chance-barra"><i id="ch-L" style="background:var(--lula);flex:0 0 50%"></i><i id="ch-F" style="background:var(--flavio);flex:0 0 50%"></i></div>
+            <div class="chance-txt"><b id="ch-L-txt" style="color:var(--lula-claro)">—</b><b id="ch-F-txt" style="color:var(--flavio-claro)">—</b></div>
+          </div>
+          <p class="nota" id="proj-nota"></p>
+        </section>
+        <section class="fio-v">
+          <p class="rotulo">Vantagem conforme a apuração avança (pontos percentuais)</p>
+          <div class="curva"><svg id="curva" preserveAspectRatio="none"></svg></div>
+          <div class="legenda-linhas"><span><i></i>Contagem</span><span><i class="tr"></i>Projeção do modelo</span></div>
+        </section>
+        <section class="fio-v">
+          <p class="rotulo">Saldo por região: a barra é o de agora, o traço é o projetado</p>
+          <div class="regioes" id="regioes"></div>
+          <div class="escala-reg"><span style="color:var(--lula-claro)">Lula</span><span style="color:var(--flavio-claro)">Flávio</span></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- MAPA -->
+    <section class="tela" id="mapa">
+      <div class="mapa-box"><div class="carregando" id="mapa-carregando">Carregando os 5.570 municípios</div>
+        <svg id="svgmapa" preserveAspectRatio="xMidYMid meet"><g id="mun"></g><g id="uf"></g></svg></div>
+      <div class="mapa-lado">
+        <div class="modos" role="group" aria-label="O que o mapa mostra">
+          <button data-modo="vencedor" aria-pressed="true">Vencedor</button>
+          <button data-modo="apuracao" aria-pressed="false">Apuração</button>
+          <button data-modo="variacao" aria-pressed="false">Desde o 1º turno</button>
+        </div>
+        <div><h2 class="modo-tit" id="modo-tit"></h2><p class="modo-desc" id="modo-desc"></p></div>
+        <div id="legenda"></div>
+        <div class="contagem" id="contagem"></div>
+        <div class="listas">
+          <div class="lista"><h4 style="color:var(--flavio-claro)">Maiores saldos de Flávio</h4><ol id="top-F"></ol></div>
+          <div class="lista"><h4 style="color:var(--lula-claro)">Maiores saldos de Lula</h4><ol id="top-L"></ol></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESTADOS -->
+    <section class="tela" id="estados">
+      <div class="bloco"><p class="rotulo">Estados, do maior saldo projetado de Flávio ao maior de Lula</p><div class="tabela" id="tabela-uf"></div></div>
+      <div class="coluna fio-v">
+        <div><p class="rotulo">Capitais, das maiores para as menores</p><div class="capitais" id="tabela-cap"></div></div>
+      </div>
+    </section>
+
+    <!-- MODELO -->
+    <section class="tela" id="modelo">
+      <div class="bloco">
+        <p class="rotulo">Para onde foi cada grupo do 1º turno (estimativa)</p>
+        <div class="fluxos" id="fluxos"></div>
+        <div class="dest"><span><i style="background:var(--flavio)"></i>Flávio</span><span><i style="background:var(--lula)"></i>Lula</span>
+          <span><i style="background:#8E8C79"></i>Branco ou nulo</span><span><i style="background:#3A3C37"></i>Não votou</span></div>
+        <p class="nota" id="fluxo-nota"></p>
+        <div class="noite fio-t">
+          <p class="rotulo">Chance de vitória de Flávio e projeção do % dele, conforme a apuração avança</p>
+          <div class="curva"><svg id="noite" preserveAspectRatio="none"></svg></div>
+          <div class="legenda-linhas"><span><i style="border-color:var(--flavio)"></i>Chance de vitória</span><span><i class="tr"></i>% projetado</span></div>
+        </div>
+      </div>
+      <div class="coluna fio-v">
+        <div class="fatos" id="fatos"></div>
+        <div class="texto">
+          <p><b>Como a projeção funciona.</b> Cada município entra com o resultado que teve no 1º turno. Nos que já foram apurados, o modelo compara os dois turnos e estima quanto de cada grupo (eleitores de Flávio, de Lula, dos outros candidatos, de branco ou nulo e quem não votou) foi para cada lado.</p>
+          <p>Essa transferência é aplicada ao eleitorado que ainda falta em cada cidade, corrigida pelo desvio do próprio estado. Por isso a projeção não depende de qual região chega primeiro.</p>
+          <p>A chance de vitória soma três fontes de erro: a de cada município, uma comum ao estado e uma comum ao país. Ela só passa a 100% quando a diferença supera todos os votos que ainda podem entrar.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="dica"></div>
+<script src="app.js"></script>
+</body>
+</html>
