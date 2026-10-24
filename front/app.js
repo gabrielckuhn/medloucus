@@ -91,11 +91,12 @@ function irPara(nova, anima = true) {
   });
   if (nova === "agora" && D) desenharCurva(D);
   if (nova === "modelo" && D) desenharNoite(D);
+  if (nova === "geral" && D) renderGeral(D, true);
   if (nova === "mapa") montarMapa();
 }
 $$("nav button").forEach(b => b.addEventListener("click", () => { pararRotacao(); irPara(b.dataset.tela); }));
 document.addEventListener("keydown", e => {
-  const ordem = ["agora", "mapa", "estados", "modelo"];
+  const ordem = ["agora", "mapa", "estados", "modelo", "geral"];
   if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
     const i = ordem.indexOf(tela) + (e.key === "ArrowRight" ? 1 : -1);
     pararRotacao();
@@ -109,7 +110,7 @@ $$(".modos button").forEach(b => b.addEventListener("click", () => {
 }));
 function iniciarRotacao(seg) {
   if (rotTimer || !seg) return;
-  const ordem = ["agora", "mapa", "estados", "modelo"];
+  const ordem = ["agora", "mapa", "estados", "modelo", "geral"];
   rotTimer = setInterval(() => irPara(ordem[(ordem.indexOf(tela) + 1) % ordem.length]), seg * 1000);
 }
 function pararRotacao() { clearInterval(rotTimer); rotTimer = null; }
@@ -422,6 +423,103 @@ function desenharNoite(d) {
   svg.innerHTML = o;
 }
 
+// ───────── GERAL ─────────
+let videosMontados = "", formas = null;
+
+function montarVideos(lista) {
+  const chave = JSON.stringify(lista || []);
+  if (chave === videosMontados) return;           // nunca recria o player (não interrompe a transmissão)
+  videosMontados = chave;
+  $("#g-videos").innerHTML = (lista || []).slice(0, 2).map(v => {
+    const id = String(v.id || "").replace(/[^A-Za-z0-9_-]/g, "");
+    const src = `https://www.youtube.com/embed/${id}?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1`;
+    return `<figure class="g-video"><figcaption><i></i>${esc(v.titulo || "Ao vivo")}</figcaption><div class="quadro">
+      ${id ? `<iframe src="${src}" title="${esc(v.titulo || "Transmissão ao vivo")}"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+        referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>` : `<div class="sem-video">Sem transmissão configurada</div>`}
+    </div></figure>`;
+  }).join("");
+}
+
+function pintarCanvas() {
+  if (!geo || !D) return;
+  if (!formas) formas = { m: geo.p.map(d => new Path2D(d)), u: geo.uf.map(d => new Path2D(d)) };
+  const m = D.mapa;
+  desenharMapaCanvas($("#cv-apuracao"), i => corApuracao(m.ap[i] ?? 0));
+  desenharMapaCanvas($("#cv-vencedor"), i => corVencedor(m.pf[i] ?? -1));
+}
+
+function desenharMapaCanvas(cv, cor) {
+  const box = cv.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(box.width * dpr); cv.height = Math.round(box.height * dpr);
+  const ctx = cv.getContext("2d");
+  const k = Math.min(cv.width / geo.w, cv.height / geo.h);
+  ctx.setTransform(k, 0, 0, k, (cv.width - geo.w * k) / 2, (cv.height - geo.h * k) / 2);
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#0E100F"; ctx.lineWidth = .35 * dpr / k;
+  for (let i = 0; i < formas.m.length; i++) { ctx.fillStyle = cor(i); ctx.fill(formas.m[i]); ctx.stroke(formas.m[i]); }
+  ctx.strokeStyle = "rgba(255,252,225,.55)"; ctx.lineWidth = 1 * dpr / k;
+  for (const u of formas.u) ctx.stroke(u);
+}
+
+function renderGeral(d, visivel) {
+  if (!d.cand) return;
+  const c = d.cand, s = d.sit, n = d.nac, p = d.proj;
+  for (const k of ["F", "L"]) {
+    const ganhou = s && (s.oficial || s.certeza) && s.lider === k;
+    $("#g-lado-" + k).classList.toggle("venceu", !!ganhou);
+    tween($("#g-pct-" + k), c[k].pct, v => fp(v));
+    tween($("#g-votos-" + k), c[k].votos, fi);
+  }
+  const gm = $("#g-manchete");
+  gm.classList.toggle("eleito", !!(s && (s.oficial || s.certeza)));
+  if (!s) gm.textContent = "Aguardando os primeiros votos";
+  else {
+    const nome = titulo(c[s.lider].nome);
+    gm.textContent = s.oficial ? `${nome} está eleito presidente` : s.certeza ? `${nome} está matematicamente eleito`
+      : `${nome} lidera por ${fi(s.dif)} votos`;
+  }
+  // contagens dos mapas
+  const m = d.mapa, cont = { F: [0, 0, 0, 0], L: [0, 0, 0, 0], n: 0 };
+  let completos = 0, zero = 0;
+  m.ap.forEach(a => { if (a >= 1000) completos++; else if (a <= 0) zero++; });
+  m.pf.forEach(pf => { if (pf < 0) return; const k = faixa(pf); if (k === 4) cont.n++; else cont[pf > 500 ? "F" : "L"][k]++; });
+  $("#g-cont-ap").innerHTML = `<div><b>${fi(completos)}</b><span>completos</span></div><div><b>${fi(m.ap.length - completos - zero)}</b><span>em apuração</span></div><div><b>${fi(zero)}</b><span>sem seção</span></div>`;
+  const vf = cont.F.reduce((a, b) => a + b, 0), vl = cont.L.reduce((a, b) => a + b, 0);
+  $("#g-cont-v").innerHTML = `<div><b style="color:${COR.Fc}">${fi(vf)}</b><span>com Flávio à frente</span></div><div><b style="color:${COR.Lc}">${fi(vl)}</b><span>com Lula à frente</span></div>`;
+  const seg = [...[0, 1, 2, 3].map(j => [cont.F[j], FAIXA_F[j]]), [cont.n, NEUTRO], ...[3, 2, 1, 0].map(j => [cont.L[j], FAIXA_L[j]])];
+  const tot = seg.reduce((a, x) => a + x[0], 0) || 1;
+  const fx = $("#g-faixas");
+  if (fx.children.length !== 9) fx.innerHTML = seg.map(x => `<i style="background:${x[1]}"></i>`).join("");
+  seg.forEach((x, j) => fx.children[j].style.flex = `0 0 ${100 * x[0] / tot}%`);
+  // projeção e chance
+  if (p && p.s_f != null) { tween($("#g-proj-F"), p.s_f, v => fp(v, 1) + "%"); tween($("#g-proj-L"), 100 - p.s_f, v => fp(v, 1) + "%"); }
+  const pf = p ? p.prob_f : null;
+  const txt = v => v > .995 ? ">99%" : v < .005 ? "<1%" : fp(100 * v, 0) + "%";
+  $("#g-ch-F").style.flexBasis = (pf == null ? 50 : 100 * pf) + "%"; $("#g-ch-L").style.flexBasis = (pf == null ? 50 : 100 * (1 - pf)) + "%";
+  $("#g-ch-F-txt").textContent = pf == null ? "Chance de vitória: aguardando" : "Chance de Flávio " + txt(pf);
+  $("#g-ch-L-txt").textContent = pf == null ? "" : "Lula " + txt(1 - pf);
+  // números
+  const ap = n.te ? 100 * n.et / n.te : n.pst;
+  tween($("#g-secoes"), n.pst, v => fp(v) + "%");
+  tween($("#g-eleitorado"), ap, v => fp(v) + "%");
+  tween($("#g-dif"), s ? s.dif : 0, fi);
+  $("#g-dif").style.color = s ? (s.oficial || s.certeza ? COR.ouro : COR[s.lider + "c"]) : "";
+  $("#g-dif-sub").textContent = s ? `de diferença (${fp(s.dif_pp, 1)} p.p.)` : "votos de diferença";
+  if (n.R == null) $("#g-resta").textContent = "—"; else tween($("#g-resta"), n.R + n.sj, fi);
+  const vz = $("#g-virar"), vs = $("#g-virar-sub");
+  if (!s || s.virar_est == null) { vz.textContent = "—"; vs.textContent = "para virar"; }
+  else {
+    const o = s.lider === "F" ? "L" : "F";
+    vs.textContent = `do restante para ${o === "F" ? "Flávio" : "Lula"} virar`;
+    if (s.virar_max == null || s.virar_max > 100) { vz.textContent = "Impossível"; vz.style.color = COR.ouro; }
+    else { tween(vz, s.virar_est, v => fp(v, 1) + "%"); vz.style.color = COR[o + "c"]; }
+  }
+  if (visivel) pintarCanvas();
+}
+
 // ───────── ciclo de dados ─────────
 function render(d) {
   D = d;
@@ -444,6 +542,8 @@ function render(d) {
   renderEstados(d);
   renderModelo(d);
   if (tela === "modelo") desenharNoite(d);
+  montarVideos(d.videos);
+  renderGeral(d, tela === "geral");
   pintarMapa(); legendaMapa();
   if (primeira) {
     primeira = false;
@@ -460,7 +560,15 @@ window.addEventListener("message", ev => {
   if (a.altura && a.altura !== ultimaAltura) { ultimaAltura = a.altura; enviar("streamlit:setFrameHeight", { height: a.altura }); }
   if (a.dados) render(a.dados);
 });
-window.addEventListener("resize", () => { if (D && tela === "agora") desenharCurva(D); if (D && tela === "modelo") desenharNoite(D); });
+window.addEventListener("resize", () => {
+  if (D && tela === "agora") desenharCurva(D);
+  if (D && tela === "modelo") desenharNoite(D);
+  if (D && tela === "geral") pintarCanvas();
+});
 
-fetch("geo.json").then(r => r.json()).then(g => { geo = g; if (tela === "mapa") montarMapa(); else setTimeout(montarMapa, 400); });
+fetch("geo.json").then(r => r.json()).then(g => {
+  geo = g;
+  if (tela === "mapa") montarMapa(); else setTimeout(montarMapa, 400);
+  if (tela === "geral") pintarCanvas();
+});
 enviar("streamlit:componentReady", { apiVersion: 1 });

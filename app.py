@@ -8,7 +8,8 @@ Apuração 2026 — 2º turno, Presidente. Painel para TV que atualiza sozinho a
 
 Endereços úteis:
   ?demo=1            demonstração (&passo=40 congela num ponto; ~90 passos até 100%)
-  ?aba=mapa          abre direto numa tela (agora, mapa, estados, modelo)
+  ?aba=mapa          abre direto numa tela (agora, mapa, estados, modelo, geral)
+  ?videos=ID1,ID2    troca as transmissões da tela Geral sem mexer no código
   ?rotacao=30        troca de tela sozinha a cada 30 s (para TV)
   ?debug=1           mostra o que o TSE devolve
 O painel do 1º turno está em app_1turno.py.
@@ -36,6 +37,10 @@ st.set_page_config(page_title="Apuração 2026 — 2º turno", page_icon="🗳�
 _painel = components.declare_component("painel_2turno", path=str(Path(__file__).parent / "front"))
 
 NOME_EXIBICAO = {"22": "Flávio Bolsonaro", "13": "Lula"}   # o TSE grava sem acento
+# Transmissões da tela Geral (id do vídeo no YouTube). Trocar aqui, ou sem commit pelo
+# endereço: ?videos=ID1,ID2
+VIDEOS = [{"titulo": "Ao vivo 1 (teste)", "id": "RWcVG52vqV0"},
+          {"titulo": "Ao vivo 2 (teste)", "id": "n8a226z2lIk"}]
 Q = st.query_params
 DEMO = Q.get("demo") in ("1", "true", "sim")
 DEBUG = Q.get("debug") in ("1", "true", "sim")
@@ -46,7 +51,7 @@ header[data-testid="stHeader"], footer, #MainMenu, [data-testid="stToolbar"], [d
 html, body, .stApp, [data-testid="stAppViewContainer"]{background:#0E100F!important;}
 .block-container, [data-testid="stMainBlockContainer"]{padding:0!important;max-width:100%!important;}
 [data-stale="true"], .stale-element{opacity:1!important;filter:none!important;transition:none!important;}
-.st-key-tela iframe{height:100vh!important;width:100%!important;border:0;display:block;}
+.st-key-tela iframe{position:fixed!important;inset:0;height:100vh!important;width:100vw!important;border:0;display:block;}
 .st-key-tela, .st-key-tela > div{gap:0!important;}
 </style>""", unsafe_allow_html=True)
 
@@ -167,7 +172,16 @@ def montar() -> dict:
         "hist": [[h["ap"], h["dn"], h["dp"], h["p"]] for h in serie],
         "rec": rec, "mapa": mapa, "grupos": grupos_1turno(),
         "coleta": coleta,
+        "videos": videos(),
     })
+
+
+def videos() -> list[dict]:
+    if Q.get("videos"):
+        ids = [v.strip() for v in str(Q["videos"]).split(",") if v.strip()][:2]
+        return [{"titulo": (VIDEOS[k]["titulo"] if k < len(VIDEOS) else f"Ao vivo {k + 1}"), "id": i}
+                for k, i in enumerate(ids)]
+    return VIDEOS
 
 
 # ───────────────────────── DIAGNÓSTICO ─────────────────────────

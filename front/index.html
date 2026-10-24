@@ -244,6 +244,53 @@ main { position: relative; min-height: 0; }
 .texto p { margin: 0 0 1.2vh; }
 .texto b { color: var(--papel); font-weight: 600; }
 
+/* ── GERAL ── */
+#geral { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: minmax(0, 1fr); gap: 2vw; }
+.g-esq { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 2.2vh; min-height: 0; }
+.g-topo, .g-meio { display: grid; grid-template-columns: 1.22fr 1.22fr 1fr; gap: 1.6vw; min-height: 0; }
+.g-mapa { margin: 0; min-height: 0; position: relative; }
+.g-mapa canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.g-placar { display: flex; flex-direction: column; justify-content: center; gap: 2.2vh; text-align: right; min-width: 0; }
+.g-nome { font-size: clamp(18px, 3.4vh, 48px); font-weight: 750; font-stretch: 72%; line-height: 1; }
+.g-pct { font-size: clamp(30px, 7.4vh, 104px); font-weight: 850; font-stretch: 125%; line-height: .88; letter-spacing: -.03em; margin-top: .4vh; }
+.g-pct small { font-size: .32em; font-weight: 600; letter-spacing: 0; margin-left: .06em; }
+.g-lado.F .g-pct { color: var(--flavio); }
+.g-lado.L .g-pct { color: var(--lula); }
+.g-lado.venceu .g-pct { color: var(--ouro); }
+.g-votos { color: var(--nevoa); font-size: var(--f-txt); margin-top: .6vh; }
+.g-votos b { color: var(--papel); font-weight: 600; }
+.g-manchete { margin: 0; font-size: var(--f-sub); font-weight: 700; font-stretch: 90%; line-height: 1.2; }
+.g-manchete.eleito { color: var(--ouro); }
+.g-meio { border-top: 1px solid var(--linha); padding-top: 1.8vh; }
+.g-meio > div { min-width: 0; }
+.g-tit { margin: 0 0 1.1vh; font-size: var(--f-sub); font-weight: 700; font-stretch: 88%; line-height: 1.1; }
+.g-cont { display: flex; gap: 1.2vw; margin-top: 1.4vh; }
+.g-cont b { display: block; font-size: clamp(18px, 3.4vh, 46px); font-weight: 850; font-stretch: 118%; line-height: 1; }
+.g-cont span { color: var(--nevoa); font-size: var(--f-mini); white-space: nowrap; }
+.g-faixas { display: flex; height: 1.8vh; min-height: 10px; }
+.g-faixas i { display: block; transition: flex-basis 1s var(--ease); }
+.g-proj { display: flex; justify-content: space-between; }
+.g-proj { gap: 1vw; }
+.g-proj b { display: block; font-size: clamp(18px, 3.4vh, 48px); font-weight: 850; font-stretch: 118%; line-height: .95; letter-spacing: -.02em; }
+.g-proj span { display: block; font-size: var(--f-mini); font-weight: 650; margin-top: .3vh; }
+.g-proj .F b { color: var(--flavio); }
+.g-proj .L { text-align: right; }
+.g-proj .L b { color: var(--lula); }
+#geral .chance-barra { margin-top: 1.4vh; }
+#geral .chance-txt { font-size: var(--f-mini); }
+.g-numeros b { font-size: clamp(15px, 2.9vh, 40px); }
+.g-numeros > div { padding: 0 max(10px, .9vw); }
+.g-numeros { margin-top: 0; border-top: 1px solid var(--linha); padding-top: 1.8vh; }
+/* dois vídeos 16:9: o de cima alinha com o topo dos mapas, o de baixo com a base da faixa de números */
+.g-videos { width: min(36vw, 69vh); display: grid; grid-template-rows: 1fr 1fr; gap: 2.4vh; min-height: 0; }
+.g-video:last-child { align-self: end; }
+.g-video { margin: 0; display: flex; flex-direction: column; gap: .8vh; min-height: 0; }
+.g-video figcaption { display: flex; align-items: center; gap: .6vw; font-size: var(--f-txt); font-weight: 650; }
+.g-video figcaption i { width: .55em; height: .55em; border-radius: 50%; background: var(--lula); }
+.g-video .quadro { position: relative; aspect-ratio: 16 / 9; width: 100%; background: var(--breu-2); border: 1px solid var(--linha); }
+.g-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.g-video .sem-video { position: absolute; inset: 0; display: grid; place-items: center; color: var(--nevoa); font-size: var(--f-txt); }
+
 .oculto { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -254,7 +301,9 @@ main { position: relative; min-height: 0; }
   .tela, .tela.ativa { position: static; }
   .topo { grid-template-columns: 1fr; gap: 1.2vh; }
   .relogio { justify-self: start; }
-  .painel3, #mapa, #estados, #modelo, .numeros { grid-template-columns: 1fr; }
+  .painel3, #mapa, #estados, #modelo, #geral, .g-topo, .g-meio, .numeros { grid-template-columns: 1fr; }
+  .g-mapa { height: 46vh; }
+  .g-placar { text-align: left; }
   .numeros > div { border-left: 0; padding: .8vh 0; }
   .mapa-box { height: 70vh; }
   .pct { font-size: 12.5vw; }
@@ -276,6 +325,7 @@ main { position: relative; min-height: 0; }
       <button data-tela="mapa">Mapa</button>
       <button data-tela="estados">Estados</button>
       <button data-tela="modelo">Modelo</button>
+      <button data-tela="geral">Geral</button>
     </nav>
     <div class="relogio"><i class="pulso" id="pulso"></i><span id="hora">Conectando ao TSE</span></div>
   </header>
@@ -380,6 +430,53 @@ main { position: relative; min-height: 0; }
           <p>A chance de vitória soma três fontes de erro: a de cada município, uma comum ao estado e uma comum ao país. Ela só passa a 100% quando a diferença supera todos os votos que ainda podem entrar.</p>
         </div>
       </div>
+    </section>
+    <!-- GERAL -->
+    <section class="tela" id="geral">
+      <div class="g-esq">
+        <div class="g-topo">
+          <figure class="g-mapa"><canvas id="cv-apuracao" aria-label="Mapa do quanto já foi apurado em cada município"></canvas></figure>
+          <figure class="g-mapa"><canvas id="cv-vencedor" aria-label="Mapa de quem vence em cada município"></canvas></figure>
+          <div class="g-placar">
+            <div class="g-lado F" id="g-lado-F"><div class="g-nome">Flávio Bolsonaro</div>
+              <div class="g-pct"><span id="g-pct-F">0,00</span><small>%</small></div><div class="g-votos"><b id="g-votos-F">0</b> votos</div></div>
+            <div class="g-lado L" id="g-lado-L"><div class="g-nome">Lula</div>
+              <div class="g-pct"><span id="g-pct-L">0,00</span><small>%</small></div><div class="g-votos"><b id="g-votos-L">0</b> votos</div></div>
+            <p class="g-manchete" id="g-manchete">Aguardando os primeiros votos</p>
+          </div>
+        </div>
+        <div class="g-meio">
+          <div>
+            <h2 class="g-tit">Quanto já foi apurado</h2>
+            <div class="gradiente" style="background:linear-gradient(90deg,#EEEEF2,#DCD9EA,#C9C5E2,#B7B1DA,#A69DD1,#9589C8,#8475BE,#7561B5,#654DAB,#5737A1,#4A1D96)"></div>
+            <div class="grad-txt"><span>0%</span><span>50%</span><span>100% das seções</span></div>
+            <div class="g-cont" id="g-cont-ap"></div>
+          </div>
+          <div>
+            <h2 class="g-tit">Quem vence em cada município</h2>
+            <div class="g-faixas" id="g-faixas"></div>
+            <div class="grad-txt"><span style="color:var(--flavio-claro)">Flávio 70%+</span><span>empate</span><span style="color:var(--lula-claro)">Lula 70%+</span></div>
+            <div class="g-cont" id="g-cont-v"></div>
+          </div>
+          <div>
+            <h2 class="g-tit">Projeção final</h2>
+            <div class="g-proj">
+              <div class="F"><b id="g-proj-F">—</b><span>Flávio</span></div>
+              <div class="L"><b id="g-proj-L">—</b><span>Lula</span></div>
+            </div>
+            <div class="chance-barra"><i id="g-ch-F" style="background:var(--flavio);flex:0 0 50%"></i><i id="g-ch-L" style="background:var(--lula);flex:0 0 50%"></i></div>
+            <div class="chance-txt"><b id="g-ch-F-txt" style="color:var(--flavio-claro)">—</b><b id="g-ch-L-txt" style="color:var(--lula-claro)">—</b></div>
+          </div>
+        </div>
+        <div class="numeros g-numeros">
+          <div><b id="g-secoes">0%</b><small>das seções totalizadas</small></div>
+          <div><b id="g-eleitorado">0%</b><small>do eleitorado apurado</small></div>
+          <div><b id="g-dif">0</b><small id="g-dif-sub">votos de diferença</small></div>
+          <div><b id="g-resta">—</b><small>ainda podem entrar</small></div>
+          <div><b id="g-virar">—</b><small id="g-virar-sub">para virar</small></div>
+        </div>
+      </div>
+      <div class="g-videos" id="g-videos"></div>
     </section>
   </main>
 </div>
