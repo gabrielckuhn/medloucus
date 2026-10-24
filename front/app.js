@@ -313,7 +313,7 @@ function legendaMapa() {
   if (modo === "vencedor") {
     const c = { F: [0, 0, 0, 0], L: [0, 0, 0, 0], n: 0, s: 0 };
     m.pf.forEach(pf => { if (pf < 0) { c.s++; return; } const k = faixa(pf); if (k === 4) c.n++; else c[pf > 500 ? "F" : "L"][k]++; });
-    const col = (k, nome, cores) => `<div><h4 style="color:${COR[k + "c"]}">${nome}</h4><div class="legenda">${cores.map((cor, j) =>
+    const col = (k, nome, cores) => `<div><h3 style="color:${COR[k + "c"]}">${nome}</h3><div class="legenda">${cores.map((cor, j) =>
       `<div class="leg-lin"><i style="background:${cor}"></i><span>${FAIXAS[j]}</span><b>${fi(c[k][j])}</b></div>`).join("")}</div></div>`;
     leg = `<div class="leg-cols">${col("F", "Flávio", FAIXA_F)}${col("L", "Lula", FAIXA_L)}</div>
       <div class="legenda" style="margin-top:1.4vh"><div class="leg-lin"><i style="background:${NEUTRO}"></i><span>De 50% + 1 voto a 51,3%, para qualquer lado</span><b>${fi(c.n)}</b></div>
@@ -426,7 +426,12 @@ function desenharNoite(d) {
 function render(d) {
   D = d;
   $("#hora").innerHTML = d.demo ? `Demonstração <b>${esc(d.hora)}</b>` : `TSE <b>${esc(d.hora)}</b>`;
-  $("#pulso").classList.toggle("falha", !!d.falha);
+  const pulso = $("#pulso");
+  pulso.classList.toggle("falha", !!d.falha);
+  if (d.hora !== pulso.__hora) {           // o TSE publicou uma atualização: o ponto pisca uma vez
+    pulso.__hora = d.hora;
+    pulso.classList.remove("novo"); void pulso.offsetWidth; pulso.classList.add("novo");
+  }
   if (!d.cand) {
     $("#manchete").textContent = d.falha ? "Sem resposta do TSE" : "Aguardando os primeiros votos";
     $("#manchete-sub").textContent = d.falha

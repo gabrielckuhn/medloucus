@@ -61,7 +61,8 @@ nav button[aria-current="page"] { color: var(--papel); }
 nav button[aria-current="page"]::after { transform: scaleX(1); }
 .relogio { justify-self: end; display: flex; align-items: center; gap: .7vw; font-size: var(--f-sub); color: var(--nevoa); }
 .relogio b { color: var(--papel); font-weight: 600; font-stretch: 110%; }
-.pulso { width: .7em; height: .7em; border-radius: 50%; background: var(--papel); animation: pulso 2.4s var(--ease) infinite; }
+.pulso { width: .7em; height: .7em; border-radius: 50%; background: var(--papel); }
+.pulso.novo { animation: pulso 1.4s var(--ease) 1; }
 .pulso.falha { background: var(--lula); animation: none; }
 @keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(255,252,225,.45); } 80%, 100% { box-shadow: 0 0 0 .8em rgba(255,252,225,0); } }
 
@@ -97,7 +98,7 @@ main { position: relative; min-height: 0; }
 .lado.L .pct { color: var(--lula); }
 .lado.venceu .pct { color: var(--ouro); }
 .selo { display: inline-block; margin-top: .8vh; font-weight: 700; color: var(--breu); background: var(--ouro);
-  padding: .15em .6em; font-size: var(--f-txt); visibility: hidden; }
+  padding: .4em .85em; font-size: var(--f-txt); visibility: hidden; }
 .lado.venceu .selo { visibility: visible; }
 
 .cabo { position: relative; height: 3.4vh; min-height: 18px; display: flex; margin-top: 1.4vh; background: var(--breu-2); }
@@ -171,11 +172,11 @@ main { position: relative; min-height: 0; }
 #uf path { fill: none; stroke: var(--papel); stroke-opacity: .55; stroke-width: 1px; vector-effect: non-scaling-stroke; pointer-events: none; }
 .carregando { position: absolute; inset: 0; display: grid; place-items: center; color: var(--nevoa); }
 #dica { position: fixed; z-index: 9; pointer-events: none; background: var(--breu); border: 1px solid var(--linha);
-  padding: .9vh .8vw; font-size: var(--f-mini); line-height: 1.45; display: none; white-space: nowrap; }
+  padding: 12px 16px; font-size: var(--f-mini); line-height: 1.45; display: none; white-space: nowrap; }
 #dica b { font-size: var(--f-txt); font-weight: 700; display: block; }
 .mapa-lado { display: flex; flex-direction: column; gap: 2.2vh; min-height: 0; overflow: hidden; }
 .modos { display: flex; gap: 0; border: 1px solid var(--linha); align-self: flex-start; }
-.modos button { padding: .9vh 1.1vw; color: var(--nevoa); font-weight: 600; font-size: var(--f-txt); transition: background .4s var(--ease), color .4s var(--ease); }
+.modos button { padding: max(10px, .9vh) max(14px, 1.1vw); color: var(--nevoa); font-weight: 600; font-size: var(--f-txt); transition: background .4s var(--ease), color .4s var(--ease); }
 .modos button[aria-pressed="true"] { background: var(--papel); color: var(--breu); }
 .modo-tit { font-size: var(--f-tit); font-weight: 750; font-stretch: 88%; margin: 0; line-height: 1.1; }
 .modo-desc { color: var(--nevoa); margin: .6vh 0 0; max-width: 46ch; }
@@ -185,14 +186,14 @@ main { position: relative; min-height: 0; }
 .leg-lin span { color: var(--nevoa); }
 .leg-lin b { font-weight: 700; font-stretch: 110%; }
 .leg-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4vw; }
-.leg-cols h4 { margin: 0 0 .8vh; font-size: var(--f-sub); font-stretch: 80%; font-weight: 750; }
+.leg-cols h3 { margin: 0 0 .8vh; font-size: var(--f-sub); font-stretch: 80%; font-weight: 750; }
 .gradiente { height: 1.8vh; min-height: 10px; }
 .grad-txt { display: flex; justify-content: space-between; color: var(--nevoa); font-size: var(--f-mini); margin-top: .5vh; }
 .contagem { display: flex; gap: 2vw; }
 .contagem div b { display: block; font-size: clamp(22px, 4.2vh, 58px); font-weight: 850; font-stretch: 118%; line-height: 1; }
 .contagem div span { color: var(--nevoa); font-size: var(--f-mini); }
 .listas { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4vw; }
-.lista h4 { margin: 0 0 .7vh; font-size: var(--f-txt); font-weight: 650; }
+.lista h3 { margin: 0 0 .7vh; font-size: var(--f-txt); font-weight: 650; }
 .lista ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .45vh; }
 .lista li { display: flex; justify-content: space-between; gap: .6vw; font-size: var(--f-mini); }
 .lista li span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -343,8 +344,8 @@ main { position: relative; min-height: 0; }
         <div id="legenda"></div>
         <div class="contagem" id="contagem"></div>
         <div class="listas">
-          <div class="lista"><h4 style="color:var(--flavio-claro)">Maiores saldos de Flávio</h4><ol id="top-F"></ol></div>
-          <div class="lista"><h4 style="color:var(--lula-claro)">Maiores saldos de Lula</h4><ol id="top-L"></ol></div>
+          <div class="lista"><h3 style="color:var(--flavio-claro)">Maiores saldos de Flávio</h3><ol id="top-F"></ol></div>
+          <div class="lista"><h3 style="color:var(--lula-claro)">Maiores saldos de Lula</h3><ol id="top-L"></ol></div>
         </div>
       </div>
     </section>
