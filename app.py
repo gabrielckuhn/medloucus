@@ -8,7 +8,7 @@ Apuração 2026 — 2º turno, Presidente. Painel para TV que atualiza sozinho a
 
 Endereços úteis:
   ?demo=1            demonstração (&passo=40 congela num ponto; ~90 passos até 100%)
-  ?aba=mapa          abre direto numa tela (agora, mapa, estados, modelo, geral)
+  ?aba=mapa          abre direto numa tela (geral, agora, mapa, estados, modelo); sem isso abre na Geral
   ?videos=ID1,ID2    troca as transmissões da tela Geral sem mexer no código
   ?rotacao=30        troca de tela sozinha a cada 30 s (para TV)
   ?modo=pc           pula a escolha inicial (?modo=celular abre direto a versão para celular)
@@ -162,7 +162,7 @@ def montar() -> dict:
         "demo": DEMO, "hora": hora,
         "falha": bool(nac.get("erro")) or bool(coleta and coleta["erro"]),
         "erro": nac.get("erro") or (coleta or {}).get("erro"),
-        "aba": Q.get("aba", "agora"), "rotacao": int(Q.get("rotacao", 0) or 0),
+        "aba": Q.get("aba", "geral"), "rotacao": int(Q.get("rotacao", 0) or 0),
         "cand": cand,
         "nac": {"pst": d.get("pst", 0.0), "secoes": list(d.get("secoes", (0, 0))), "te": d.get("eleitorado", 0),
                 "et": d.get("eleitorado_tot", 0), "validos": d.get("validos", 0), "sj": d.get("sub_judice", 0),

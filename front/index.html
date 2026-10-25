@@ -331,18 +331,18 @@ main { position: relative; min-height: 0; }
   <header class="topo">
     <div class="marca"><b>Apuração 2026</b><span id="subtitulo">Presidente, 2º turno</span></div>
     <nav aria-label="Telas">
-      <button data-tela="agora" aria-current="page">Agora</button>
+      <button data-tela="geral" aria-current="page">Geral</button>
+      <button data-tela="agora">Agora</button>
       <button data-tela="mapa">Mapa</button>
       <button data-tela="estados">Estados</button>
       <button data-tela="modelo">Modelo</button>
-      <button data-tela="geral">Geral</button>
     </nav>
     <div class="relogio"><i class="pulso" id="pulso"></i><span id="hora">Conectando ao TSE</span></div>
   </header>
 
   <main>
     <!-- AGORA -->
-    <section class="tela ativa" id="agora">
+    <section class="tela" id="agora">
       <div class="manchete"><h1 id="manchete">Aguardando os primeiros votos</h1><p id="manchete-sub"></p></div>
       <div>
         <div class="placar">
@@ -442,7 +442,7 @@ main { position: relative; min-height: 0; }
       </div>
     </section>
     <!-- GERAL -->
-    <section class="tela" id="geral">
+    <section class="tela ativa" id="geral">
       <div class="g-esq">
         <div class="g-topo">
           <figure class="g-mapa"><canvas id="cv-apuracao" aria-label="Mapa do quanto já foi apurado em cada município"></canvas></figure>

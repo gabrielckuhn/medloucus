@@ -76,7 +76,7 @@ function corVariacao(sw) {
 }
 
 // ───────── estado ─────────
-let D = null, geo = null, caminhos = [], modo = "vencedor", tela = "agora", primeira = true, rotTimer = null;
+let D = null, geo = null, caminhos = [], modo = "vencedor", tela = "geral", primeira = true, rotTimer = null;
 
 // ───────── navegação ─────────
 function irPara(nova, anima = true) {
@@ -96,7 +96,7 @@ function irPara(nova, anima = true) {
 }
 $$("nav button").forEach(b => b.addEventListener("click", () => { pararRotacao(); irPara(b.dataset.tela); }));
 document.addEventListener("keydown", e => {
-  const ordem = ["agora", "mapa", "estados", "modelo", "geral"];
+  const ordem = ["geral", "agora", "mapa", "estados", "modelo"];
   if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
     const i = ordem.indexOf(tela) + (e.key === "ArrowRight" ? 1 : -1);
     pararRotacao();
@@ -110,7 +110,7 @@ $$(".modos button").forEach(b => b.addEventListener("click", () => {
 }));
 function iniciarRotacao(seg) {
   if (rotTimer || !seg) return;
-  const ordem = ["agora", "mapa", "estados", "modelo", "geral"];
+  const ordem = ["geral", "agora", "mapa", "estados", "modelo"];
   rotTimer = setInterval(() => irPara(ordem[(ordem.indexOf(tela) + 1) % ordem.length]), seg * 1000);
 }
 function pararRotacao() { clearInterval(rotTimer); rotTimer = null; }
@@ -549,7 +549,7 @@ function render(d) {
   pintarMapa(); legendaMapa();
   if (primeira) {
     primeira = false;
-    if (d.aba && d.aba !== "agora") irPara(d.aba, false);
+    if (d.aba && d.aba !== tela) irPara(d.aba, false);
     iniciarRotacao(d.rotacao);
   }
 }
