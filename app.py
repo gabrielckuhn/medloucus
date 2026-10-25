@@ -11,6 +11,7 @@ Endereços úteis:
   ?aba=mapa          abre direto numa tela (agora, mapa, estados, modelo, geral)
   ?videos=ID1,ID2    troca as transmissões da tela Geral sem mexer no código
   ?rotacao=30        troca de tela sozinha a cada 30 s (para TV)
+  ?modo=pc           pula a escolha inicial (?modo=celular abre direto a versão para celular)
   ?debug=1           mostra o que o TSE devolve
 O painel do 1º turno está em app_1turno.py.
 """
@@ -51,7 +52,7 @@ header[data-testid="stHeader"], footer, #MainMenu, [data-testid="stToolbar"], [d
 html, body, .stApp, [data-testid="stAppViewContainer"]{background:#0E100F!important;}
 .block-container, [data-testid="stMainBlockContainer"]{padding:0!important;max-width:100%!important;}
 [data-stale="true"], .stale-element{opacity:1!important;filter:none!important;transition:none!important;}
-.st-key-tela iframe{position:fixed!important;inset:0;height:100vh!important;width:100vw!important;border:0;display:block;}
+.st-key-tela iframe{position:fixed!important;inset:0;height:100vh!important;height:100dvh!important;width:100vw!important;border:0;display:block;}
 .st-key-tela, .st-key-tela > div{gap:0!important;}
 </style>""", unsafe_allow_html=True)
 

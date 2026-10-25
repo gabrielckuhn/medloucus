@@ -207,8 +207,7 @@ function renderProjecao(d) {
   $("#proj-nota").innerHTML = partes.join(" ");
 }
 
-function desenharCurva(d) {
-  const svg = $("#curva");
+function desenharCurva(d, svg = $("#curva")) {
   const W = svg.clientWidth, H = svg.clientHeight;
   if (!W || !H) return;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
@@ -525,6 +524,7 @@ function renderGeral(d, visivel) {
 // ───────── ciclo de dados ─────────
 function render(d) {
   D = d;
+  if (modoTela === "mobile") { renderFeed(d); return; }     // versão para celular (mobile.js)
   $("#hora").innerHTML = d.demo ? `Demonstração <b>${esc(d.hora)}</b>` : `TSE <b>${esc(d.hora)}</b>`;
   const pulso = $("#pulso");
   pulso.classList.toggle("falha", !!d.falha);
@@ -544,7 +544,7 @@ function render(d) {
   renderEstados(d);
   renderModelo(d);
   if (tela === "modelo") desenharNoite(d);
-  montarVideos(d.videos);
+  if (modoTela === "pc") montarVideos(d.videos);            // só depois da escolha
   renderGeral(d, tela === "geral");
   pintarMapa(); legendaMapa();
   if (primeira) {
@@ -570,6 +570,7 @@ window.addEventListener("resize", () => {
 
 fetch("geo.json").then(r => r.json()).then(g => {
   geo = g;
+  if (modoTela === "mobile") { if (D) pintarMapaFeed(D); return; }
   if (tela === "mapa") montarMapa(); else setTimeout(montarMapa, 400);
   if (tela === "geral") pintarCanvas();
 });
