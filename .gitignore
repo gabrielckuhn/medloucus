@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .impeccable/
+.presenca.json
+.presenca.tmp

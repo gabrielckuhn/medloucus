@@ -13,6 +13,7 @@ Endereços úteis:
   ?rotacao=30        troca de tela sozinha a cada 30 s (para TV)
   ?modo=pc           pula a escolha inicial (?modo=celular abre direto a versão para celular)
   ?debug=1           mostra o que o TSE devolve
+  /sensor            página escondida com quantos aparelhos estão assistindo agora e no total
 O painel do 1º turno está em app_1turno.py.
 """
 from __future__ import annotations
@@ -29,6 +30,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 import modelo
+import presenca
 import tse
 from demo import PASSOS, carregar_demo
 
@@ -212,12 +214,20 @@ def tela_diagnostico():
 @st.fragment(run_every=tse.REFRESH_S)
 def painel():
     with st.container(key="tela"):
-        _painel(dados=montar(), altura=1080, key="painel", default=None)
+        sinal = _painel(dados=montar(), altura=1080, key="painel", default=None)
+    if not DEMO:
+        presenca.registrar(sinal)   # contagem anônima de audiência (ver presenca.py e a página /sensor)
 
 
-if DEBUG:
-    tela_diagnostico()
-else:
+def pagina_painel():
+    if DEBUG:
+        tela_diagnostico()
+        return
     if not DEMO:
         tse.coletor()           # começa a ler os municípios em segundo plano
     painel()
+
+
+# /sensor: página escondida (sem link nem menu) com a audiência ao vivo
+st.navigation([st.Page(pagina_painel, title="Apuração 2026 — 2º turno", default=True),
+               st.Page(presenca.pagina, title="Sensor", url_path="sensor")], position="hidden").run()
