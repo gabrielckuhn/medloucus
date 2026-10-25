@@ -39,8 +39,8 @@ _painel = components.declare_component("painel_2turno", path=str(Path(__file__).
 NOME_EXIBICAO = {"22": "Flávio Bolsonaro", "13": "Lula"}   # o TSE grava sem acento
 # Transmissões da tela Geral (id do vídeo no YouTube). Trocar aqui, ou sem commit pelo
 # endereço: ?videos=ID1,ID2
-VIDEOS = [{"titulo": "Ao vivo 1 (teste)", "id": "RWcVG52vqV0"},
-          {"titulo": "Ao vivo 2 (teste)", "id": "n8a226z2lIk"}]
+VIDEOS = [{"titulo": "SBT News ao vivo", "id": "n5pX4SW9v7k"},
+          {"titulo": "CNN Brasil ao vivo", "id": "wwLxIO0zTP8"}]
 Q = st.query_params
 DEMO = Q.get("demo") in ("1", "true", "sim")
 DEBUG = Q.get("debug") in ("1", "true", "sim")
