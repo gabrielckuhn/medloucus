@@ -43,7 +43,7 @@ function escolherModo(m) {
     $("#g-videos").innerHTML = ""; videosMontados = "";        // um par de vídeos só
     montarFeed();
     if (D) renderFeed(D);
-    window.scrollTo(0, 0);
+    $("#feed").scrollTop = 0;
   } else {
     document.documentElement.classList.remove("m");
     const f = document.getElementById("feed"); if (f) f.innerHTML = "";
@@ -177,11 +177,11 @@ function prepararMovimento(raiz) {
 
 // parallax leve no herói e placar compacto na barra quando o herói sai da tela
 let mRaf = 0;
-window.addEventListener("scroll", () => {
+document.getElementById("feed").addEventListener("scroll", () => {
   if (modoTela !== "mobile" || mRaf) return;
   mRaf = requestAnimationFrame(() => {
     mRaf = 0;
-    const y = window.scrollY, h = $("#m-heroi");
+    const y = $("#feed").scrollTop, h = $("#m-heroi");
     if (!h) return;
     const alt = h.offsetHeight;
     if (MOV && y < alt * 1.2) {

@@ -35,10 +35,13 @@
 
 /* ── modo celular ── */
 #feed { display: none; }
-html.m { height: auto; overflow-x: hidden; overflow-y: auto; scroll-behavior: smooth; overscroll-behavior-y: none; }
-html.m body { height: auto; min-height: 100%; overflow: visible; overflow-x: clip; }   /* sem criar outro contêiner de rolagem: a barra fica presa no topo */
+/* O Streamlit cria o quadro com scrolling="no", o que trava a rolagem do documento por toque e roda do mouse.
+   Por isso quem rola é o próprio #feed, ocupando a tela inteira. */
+html.m, html.m body { height: 100%; overflow: hidden; }
 html.m .hud, html.m #dica { display: none; }
-html.m #feed { display: block; font-size: 15px; line-height: 1.4; padding-bottom: env(safe-area-inset-bottom); }
+html.m #feed { display: block; position: fixed; inset: 0; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; scroll-behavior: smooth; touch-action: pan-y;
+  font-size: 15px; line-height: 1.4; padding-bottom: env(safe-area-inset-bottom); }
 
 .m-barra { position: sticky; top: 0; z-index: 10; background: rgba(14, 16, 15, .92); backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px); padding: max(10px, env(safe-area-inset-top)) 20px 10px; }
